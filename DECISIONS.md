@@ -5,6 +5,126 @@ Newest first.
 
 ---
 
+## 2026-09-09 — video-agent Phase 1: recipes + CLI, not skills or subagents
+
+**Context.** The `docs/video-agent/ROADMAP.md` lists `compose-spec`,
+`proxy-preview` and `matte-video` in a "Tools / skills" table and a separate
+"Subagents" table. They could be standalone skills (like `verify-render`),
+Claude Code subagents, or Python recipes in this package.
+
+**Chosen.** Python recipes in `src/media_lab/recipes/` plus `media-lab`
+subcommands, extending the existing package on `feat/video-agent-toolkit`.
+
+**Trade-off accepted.** They are not invokable from outside a `media-lab`
+checkout until a later phase wraps them. In exchange they reuse `config`,
+`paths`, `verify`, `ffmpeg` and the test harness unchanged — one codebase, one
+error model, one non-destructive contract — instead of re-implementing that
+infrastructure per skill. A thin skill/agent wrapper is a Phase 4 concern.
+
+---
+
+## 2026-09-09 — Run RVM through a separate venv via subprocess
+
+**Context.** `matte-video` wraps Robust Video Matting. RVM needs
+`torch` + `torchvision`; the project `.venv` deliberately carries neither, and
+RVM is **GPL-3.0** — vendoring its source into this (otherwise permissively
+licensed) repo would be a licensing problem.
+
+**Chosen.** Clone RVM to `tools/RobustVideoMatting/` (git-ignored), build a
+git-ignored `.rvm-venv` at the project root, and invoke it only through a new
+`ml_runner.py` module — the single sanctioned exit to that venv, exactly as
+`kino.py` is for kinocut and `ffmpeg.py` for direct ffmpeg. Our driver code
+that imports RVM (`src/media_lab/ml/rvm_infer.py`) runs inside `.rvm-venv` as a
+subprocess.
+
+**Trade-off accepted.** A third external process boundary and a second
+recreatable-but-not-committed environment (alongside `bin/` and `.venv/`).
+Data crosses the boundary as an RGBA PNG sequence + a JSON stats file rather
+than in-process tensors. In exchange, torch stays out of `uv sync`, mypy strict
+and ruff never see it, GPL code never enters the repo, and a torch/RVM break
+hits one module.
+
+---
+
+## 2026-09-09 — ML paths are lazily-validated config, not startup-validated
+
+**Context.** `config.py` validates everything at startup so the project fails
+loudly rather than mid-render. The new `rvm_venv` / `rvm_repo` / `weights_dir`
+paths only matter to `matte-video`.
+
+**Chosen.** Add them to `Config` with project-root-relative defaults, but check
+them in a `require_ml(config)` helper the recipe calls — not in `load_config`.
+`doctor` reports ML state as `(ok)` / `(not configured)` without failing.
+
+**Trade-off accepted.** A second validation style in the codebase (startup for
+core, lazy for ML). In exchange, `doctor`, `cutout`, `backdrop`, `filter`,
+`music`, `short` and `pipeline` all keep working on a machine that has never
+installed torch.
+
+---
+
+## 2026-09-09 — matte-video writes ProRes 4444 .mov
+
+**Context.** `pipeline/matte_rvm.py` writes a PNG sequence; `place_composite.py`
+consumes a directory of PNGs. But the project's verification layer
+(`verify_render`, `measure_alpha_spread`) is built around a single file with a
+readable alpha channel, and `cutout.py` already established ProRes 4444 `.mov`
+as the alpha-carrying interchange format.
+
+**Chosen.** `matte-video` writes frames internally, then muxes a ProRes 4444
+`.mov` as its deliverable. The PNG working directory is kept as an
+intermediate.
+
+**Trade-off accepted.** A mux step and a large file (ProRes is ~214 MB / 6.4 s).
+In exchange, one artefact to verify with the existing tooling, consistent with
+`cutout`.
+
+---
+
+## 2026-09-09 — compose-spec: YAML in, filtergraph emitted and run, subject pre-placed
+
+**Context.** `compose-spec` replaces the hand-edited `compose_pipeline.sh`.
+Open questions: spec format; whether it also positions the subject; how the
+grade chain is exposed.
+
+**Chosen.** A YAML spec (comments, readability). `compose-spec` writes the
+`-filter_complex` string to a `.filtergraph.txt` sidecar **and** runs it. It
+overlays a **pre-placed, full-canvas** RGBA subject sequence at `0:0` — it
+never scales or moves the subject (that stays in `place_composite.py` / a
+Phase-2 `subject-ground` tool). The grade is a fixed `v23` profile
+(constants lifted from the v23 script) toggled on/off with a few scalar knobs
+(atmosphere opacity, grain, vignette). The depth-occlusion strip is
+parametrised (height, feather, y).
+
+**Trade-off accepted.** The spec cannot express a camera move or a custom
+grade without a code change. In exchange, the person writing a spec cannot
+hit the `zsh` word-split or `fade` white-out pitfalls, and the grade stays a
+named look rather than raw ffmpeg values — the same philosophy as
+`recipes/filters.py`. Matches how v23 actually rendered (`overlay=0:0` on
+full-canvas placed frames).
+
+---
+
+## 2026-09-09 — Phase 1 acceptance is the punto clip, checked to container spec
+
+**Context.** "Phase 1 done" needed a concrete bar. Options ranged from
+"synthetic tests only" to "bit-exact reproduction of v23".
+
+**Chosen.** Both: each tool carries its own suite (happy + ≥2 edge + 1 error,
+coverage ≥ 80%, ML mocked by default with one opt-in real-RVM test), **and** a
+`media-lab punto` runner reproduces the v23 render through the three new tools.
+The reproduction is judged a pass on container spec (2160×3840, 30 fps,
+~6.43 s, no audio, H.264 High, yuv420p — via `verify-render`) plus a visual
+contact-sheet match against
+`out/punto-final_2160x3840_30fps_h264-crf17.mp4`. Not bit-exact.
+
+**Trade-off accepted.** The visual half of the check is a human judgement, not
+an assertion, so it cannot gate CI (there is no CI — single-user, local). In
+exchange, the acceptance actually proves the three tools replace the v23
+pipeline, which "synthetic tests only" would not.
+
+---
+
 ## 2026-09-03 — Wrap Kinocut rather than write our own ffmpeg layer
 
 **Context.** The goal was a local editor for short social clips: person
