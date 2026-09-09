@@ -33,8 +33,21 @@ compose_pipeline.sh
   └─ encode: libx264 High, crf 17-18, +faststart, 30fps native
 ```
 
-Every stage is a small standalone script. `compose_pipeline.sh` is the glue; edit the
-variables at the top (bg clip, offsets, occlusion strip Y) per shot.
+Every stage is a small standalone script. `compose_pipeline.sh` is a captured v23
+run, kept as a record.
+
+**Phase 1 replaces the ends of that chain with typed `media-lab` commands** (see
+`PLAN.md`):
+
+```
+media-lab matte   in/punto-source.mp4 -o work/m.mov      # matte_rvm.py, productised
+                  (upscale_realesrgan.py + place_composite.py stay as-is)
+media-lab compose docs/video-agent/punto-v23.yaml -o out/x.mp4   # compose_pipeline.sh, productised
+media-lab proxy   out/x.mp4 --compare out/prev.mp4        # fast preview + contact sheet
+media-lab punto   -o out/punto.mp4 [--proxy]             # the whole chain, one command
+```
+
+`matte` and `punto` need `./scripts/fetch-rvm.sh` first.
 
 ---
 

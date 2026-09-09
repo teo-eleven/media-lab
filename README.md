@@ -12,19 +12,27 @@ probed and checked against what was asked for.
 
 ## What it does
 
-| Command              | What it does                                                        |
-| -------------------- | ------------------------------------------------------------------- |
-| `media-lab doctor`   | Report the resolved environment and run kinocut's own checks        |
-| `media-lab cutout`   | Cut a person out of a still or video, keeping alpha                 |
-| `media-lab backdrop` | Composite a cutout onto a new image or video backdrop               |
-| `media-lab filter`   | Apply one of ten named looks, or chain two                          |
-| `media-lab music`    | Mix a music bed under the voice with sidechain ducking              |
-| `media-lab short`    | Reframe to 9:16 (or another ratio), export, quality-gate, thumbnail |
-| `media-lab pipeline` | Run the whole edit in one pass                                      |
-| `media-lab clean`    | Empty `work/` (add `--dry-run` to preview first)                    |
+| Command              | What it does                                                           |
+| -------------------- | ---------------------------------------------------------------------- |
+| `media-lab doctor`   | Report the resolved environment and run kinocut's own checks           |
+| `media-lab cutout`   | Cut a person out of a still or video, keeping alpha                    |
+| `media-lab matte`    | Matte a person out of a video with RVM (ProRes 4444 + flicker score)   |
+| `media-lab backdrop` | Composite a cutout onto a new image or video backdrop                  |
+| `media-lab compose`  | Render a shot from a compose-spec YAML (bg, subject, occlusion, grade) |
+| `media-lab filter`   | Apply one of ten named looks, or chain two                             |
+| `media-lab proxy`    | Fast low-res proxy + contact sheet of a render, optional side-by-side  |
+| `media-lab music`    | Mix a music bed under the voice with sidechain ducking                 |
+| `media-lab short`    | Reframe to 9:16 (or another ratio), export, quality-gate, thumbnail    |
+| `media-lab pipeline` | Run the whole edit in one pass                                         |
+| `media-lab punto`    | Reproduce the punto v23 render through matte/compose/proxy             |
+| `media-lab clean`    | Empty `work/` (add `--dry-run` to preview first)                       |
 
 Available looks: `warm`, `cool`, `vintage`, `cinematic`, `noir`, `vignette`,
 `glow`, `grain`, `vibrant`, `punchy`.
+
+`matte` and `punto` need the RVM checkout: `./scripts/fetch-rvm.sh` clones it to
+`tools/` and downloads the weights. See `docs/video-agent/` for the toolkit's
+design (`SPEC.md`, `PLAN.md`) and the compose-spec format (`punto-v23.yaml`).
 
 ## Requirements
 
@@ -87,6 +95,7 @@ quality gate into a non-zero exit instead of a printed warning.
 
 ```
 bin/       static ffmpeg + ffprobe (gitignored, see scripts/fetch-ffmpeg.sh)
+tools/     third-party checkouts, e.g. RVM (gitignored, see scripts/fetch-rvm.sh)
 in/        source media - READ ONLY, never modified (gitignored)
 out/       renders (gitignored)
 work/      pipeline intermediates, kept for inspection (gitignored)

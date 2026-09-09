@@ -5,6 +5,49 @@ Newest first.
 
 ---
 
+## 2026-09-09 — compose-spec renders in one fused ffmpeg pass
+
+**Context.** The v23 `compose_pipeline.sh` was three ffmpeg invocations with
+two ProRes 422 intermediates (~720 MB each): background prep, composite +
+occlusion, grade + encode. Spike S1 reproduced each stage from parameters.
+
+**Chosen.** `compose_spec.build_filtergraph` emits a single `-filter_complex`
+graph that does all three: `[0:v]fps,scale,split` -> feathered occlusion strip
+via `geq` -> overlay the pre-placed subject at 0:0 -> re-overlay the strip ->
+the v23 grade chain -> encode. One `ffmpeg` call, no intermediates.
+
+**Trade-off accepted.** The graph string is long (~700 chars) and a failure in
+it is harder to bisect than a failed stage. In exchange: no 1.4 GB of ProRes
+per run, one pass instead of three, and — measured against the real v23
+render — `mean|Δ| 2.3/255` (better than the 3-stage spike's 2.6, because the
+ProRes round-trips are gone). Bit-exact is impossible anyway: `noise=allf=t`
+reseeds per run.
+
+---
+
+## 2026-09-09 — the punto runner stages frames around the unchanged v23 scripts
+
+**Context.** Phase 1 keeps `upscale_realesrgan.py` and `place_composite.py`
+verbatim (they are a captured record). But their hardcoded I/O dirs do not
+chain: matte writes `rvm/`, upscale reads `isnet/cut/` and writes `isnet/up/`,
+place reads `rvm_up/` (or falls back to `isnet/cut/`). The v23 run only worked
+via manual renames recorded nowhere (audit finding M2).
+
+**Chosen.** `recipes/punto_v23.py` stages between them: matte frames ->
+`isnet/cut/`; after upscale, **move** `isnet/up/` -> `rvm_up/` so `place`
+picks the upscaled frames. `ml_runner.run` gained a `cwd` argument so the
+scripts run from the repo root where their relative paths resolve. `--proxy`
+skips the upscale and the move, so `place` composites the 720p frames and the
+subject is ~half v23 scale — the CLI says so.
+
+**Trade-off accepted.** The runner encodes knowledge of two scripts' internal
+paths, so editing those scripts can break it silently. This is the documented
+Phase-2 cleanup point (fold them into real `upscale` / `subject-ground`
+tools). Until then the alternative — a one-line env-var patch to each script —
+was rejected to keep them a faithful v23 record.
+
+---
+
 ## 2026-09-09 — video-agent Phase 1: recipes + CLI, not skills or subagents
 
 **Context.** The `docs/video-agent/ROADMAP.md` lists `compose-spec`,

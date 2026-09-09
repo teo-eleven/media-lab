@@ -447,8 +447,28 @@ skill/subagent wrappers (Phase 4).
   `media-lab matte in/punto-source.mp4 --model mobilenetv3` -> 193 frames,
   alpha spread 255, score 5.29, ~42 s, verify-render 0 problems.
 - [x] Step 3 — matte-video + rvm_infer + CLI
-- [ ] Step 4 — compose_spec builder (pure)
-- [ ] Step 5 — compose-spec recipe + CLI
-- [ ] Step 6 — contact_sheet + proxy-preview + CLI
-- [ ] Step 7 — punto runner + CLI
-- [ ] Step 8 — docs sync + review
+- [x] Step 4 — compose_spec builder (pure)
+- [x] Step 5 — compose-spec recipe + CLI
+- [x] Step 6 — contact_sheet + proxy-preview + CLI
+- [x] Step 7 — punto runner + CLI
+- [x] Step 8 — docs sync + review
+
+### Deviations (steps 4-8)
+
+- **Step 4/5:** `build_filtergraph` emits ONE fused ffmpeg pass (bg-prep +
+  composite + occlusion + grade + encode), not the 3 stages of
+  `compose_pipeline.sh`. Zero ProRes intermediates; matches v23 at
+  `mean|Δ| 2.3/255` (better than the 3-stage S1 spike). `ffmpeg.run_filtergraph`
+  takes primitives (no `FilterGraph`/spec import) so `ffmpeg.py` stays
+  low-level. The `.filtergraph.txt` sidecar lands beside the output, not in a
+  fixed `work/` slot.
+- **Step 6:** the contact sheet uses ffmpeg's `tile` filter (one call) rather
+  than hand-built hstack/vstack. `proxy`, `sheet` and the side-by-side are all
+  `--force`-guarded (re-running needs `--force` or `media-lab clean`).
+- **Step 7:** `ml_runner.run` gained a `cwd` argument - the legacy
+  `upscale_realesrgan.py` / `place_composite.py` hardcode `work/...` paths and
+  must run from the repo root. The stage map is matte frames ->
+  `isnet/cut/` -> upscale -> `isnet/up/` **moved to** `rvm_up/` -> place ->
+  `isnet/placed/`. `--proxy` skips the upscale + the `rvm_up/` move (place
+  falls back to `isnet/cut/`; the CLI prints the half-scale caveat).
+  `docs/video-agent/punto-v23.yaml` checked in as the reference spec.
