@@ -5,6 +5,7 @@ description = "Local video/photo editing pipeline for short social clips, built 
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "kinocut[hyperframes,image,transcribe,stems,upscale]==1.15.1",
+    "pyyaml>=6.0",
 ]
 
 [project.scripts]
@@ -16,6 +17,7 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.6",
     "mypy>=1.11",
+    "types-pyyaml>=6.0",
 ]
 
 [build-system]

@@ -67,6 +67,10 @@ class MlEnvError(MediaLabError):
     subprocess exited non-zero or timed out."""
 
 
+class SpecError(MediaLabError):
+    """A compose-spec YAML file is missing a field or holds an invalid value."""
+
+
 class VerificationError(MediaLabError):
     """A render completed but does not match what was asked for."""
 
