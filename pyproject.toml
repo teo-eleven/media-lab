@@ -28,6 +28,10 @@ packages = ["src/media_lab"]
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
+# docs/video-agent/pipeline/ holds captured reference scripts from the punto
+# edit (v1-v23), kept verbatim as a record. They are not part of the linted
+# package; mypy already scopes to src+tests for the same reason.
+extend-exclude = ["docs/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RET"]

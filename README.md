@@ -43,13 +43,14 @@ Pinned: `kinocut==1.15.1`, `hyperframes@0.8.27`, static `ffmpeg`/`ffprobe` 9.0
 ```sh
 cd media-lab
 ./scripts/fetch-ffmpeg.sh   # static ffmpeg + ffprobe into ./bin
-make setup                  # uv sync + npm install
+make setup                  # uv sync + npm install + basicsr shim
 cp .env.example .env
 make doctor                 # verify the environment
 ```
 
 `bin/`, `.venv/` and `node_modules/` are gitignored; those three commands
-recreate them from pinned versions.
+recreate them from pinned versions. `make setup` also runs
+`scripts/patch-basicsr-shim.sh` (see Known limitations).
 
 ## Use it
 
@@ -138,6 +139,13 @@ The suite performs real renders, so it takes a few minutes.
 - **Cutout speed** is roughly 125 ms per frame on an M2, so a 30-second clip
   at 30 fps takes about two minutes.
 - `video-body-swap` exists in kinocut but is deliberately not exposed here.
+- **`basicsr` needs a torchvision shim.** `kinocut[upscale]` pulls `basicsr`,
+  which imports `torchvision.transforms.functional_tensor` - removed in
+  torchvision 0.17. Without it, `import basicsr` / `realesrgan` and any
+  `kino *upscale*` call fail at import. `make setup` runs
+  `scripts/patch-basicsr-shim.sh`, which writes a re-export module into the
+  venv; the file is under the gitignored `.venv`, so the script makes the
+  patch reproducible. It is idempotent and safe to re-run.
 
 ## Environment variables
 
