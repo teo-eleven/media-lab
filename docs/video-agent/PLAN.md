@@ -428,7 +428,7 @@ skill/subagent wrappers (Phase 4).
 - [x] S0 — ML environment boundary spike (findings above; `work/spike-s0/`)
 - [x] S1 — filtergraph port spike (findings above; `work/spike-s1/`)
 - [x] Step 1 — config + fetch-rvm.sh + doctor
-- [ ] Step 2 — ml_runner.py
+- [x] Step 2 — ml_runner.py
 
 ### Deviations
 

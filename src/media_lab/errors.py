@@ -63,7 +63,8 @@ class ProbeError(MediaLabError):
 
 
 class MlEnvError(MediaLabError):
-    """The ML environment (the RVM checkout or its weights) is missing or incomplete."""
+    """The ML layer failed: the RVM checkout or weights are missing, or an ML
+    subprocess exited non-zero or timed out."""
 
 
 class VerificationError(MediaLabError):
