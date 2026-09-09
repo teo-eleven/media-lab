@@ -114,6 +114,12 @@ def test_rejects_a_crf_above_the_ceiling(tmp_path: Path) -> None:
         load_spec(_write(tmp_path, _raw(output={"crf": 80})))
 
 
+def test_rejects_a_vignette_that_smuggles_a_filter(tmp_path: Path) -> None:
+    raw = _raw(grade={"profile": "v23", "vignette": "PI/5,movie=/etc/passwd[x]"})
+    with pytest.raises(SpecError, match="grade.vignette: only an angle expression"):
+        load_spec(_write(tmp_path, raw))
+
+
 # --- building ------------------------------------------------------------
 
 

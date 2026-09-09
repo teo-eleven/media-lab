@@ -12,6 +12,7 @@ The subject is never moved or scaled here; that stays upstream.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,10 @@ from .errors import SpecError
 
 GRADE_PROFILES = ("v23", "none")
 MAX_CRF = 51
+# `vignette` lands verbatim in the ffmpeg -filter_complex, so keep it to a plain
+# angle expression - digits, PI, and the arithmetic operators. No commas, no
+# filter names, nothing that could open a second filter or a `movie=` source.
+_VIGNETTE_RE = re.compile(r"^[0-9PI.\s*/+()-]+$")
 # The v23 grade chain, constants lifted verbatim from compose_pipeline.sh:27.
 # Only atmosphere opacity, grain and vignette are exposed as spec knobs.
 _V23_ATMOSPHERE = "scale=iw/6:ih/6,gblur=sigma=7,scale={w}:{h}:flags=bilinear,eq=brightness=0.03"
@@ -180,11 +185,17 @@ def load_spec(path: Path | str) -> ComposeSpec:
         atmosphere = float(g.get("atmosphere", 0.07))
         if not 0.0 <= atmosphere <= 1.0:
             raise SpecError(f"grade.atmosphere: must be within [0, 1], got {atmosphere}")
+        vignette = str(g.get("vignette", "PI/5.8"))
+        if not _VIGNETTE_RE.match(vignette):
+            raise SpecError(
+                f"grade.vignette: only an angle expression is allowed "
+                f"(digits, PI, + - * / . parens), got {vignette!r}"
+            )
         grade = GradeSpec(
             profile=profile,
             atmosphere=atmosphere,
             grain=_non_negative_int(g.get("grain", 4), "grade.grain"),
-            vignette=str(g.get("vignette", "PI/5.8")),
+            vignette=vignette,
         )
 
     output = OutputSpec()
