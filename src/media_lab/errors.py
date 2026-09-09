@@ -62,6 +62,10 @@ class ProbeError(MediaLabError):
     """ffprobe could not read a file, or returned something unusable."""
 
 
+class MlEnvError(MediaLabError):
+    """The ML environment (the RVM checkout or its weights) is missing or incomplete."""
+
+
 class VerificationError(MediaLabError):
     """A render completed but does not match what was asked for."""
 

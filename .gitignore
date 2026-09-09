@@ -11,8 +11,9 @@ htmlcov/
 # Node
 node_modules/
 
-# Local binaries (downloaded per machine, see README)
+# Local binaries and third-party checkouts (downloaded per machine, see README)
 bin/
+tools/
 
 # Secrets and local config
 .env

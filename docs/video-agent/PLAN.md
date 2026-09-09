@@ -425,10 +425,17 @@ skill/subagent wrappers (Phase 4).
 
 ## Progress
 
-- [ ] S0 — ML environment boundary spike
-- [ ] S1 — filtergraph port spike
-- [ ] Step 1 — config + fetch-rvm.sh + doctor
+- [x] S0 — ML environment boundary spike (findings above; `work/spike-s0/`)
+- [x] S1 — filtergraph port spike (findings above; `work/spike-s1/`)
+- [x] Step 1 — config + fetch-rvm.sh + doctor
 - [ ] Step 2 — ml_runner.py
+
+### Deviations
+
+- **Step 1:** `scripts/fetch-rvm.sh` also `curl`s the two weight files (skipping
+  any present), rather than only printing the URLs — more useful, idempotent,
+  and it means `media-lab doctor` goes straight to `(ok)`. No checksum pinning:
+  RVM publishes none; the script says so.
 - [ ] Step 3 — matte-video + rvm_infer + CLI
 - [ ] Step 4 — compose_spec builder (pure)
 - [ ] Step 5 — compose-spec recipe + CLI
