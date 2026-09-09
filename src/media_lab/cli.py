@@ -9,12 +9,14 @@ from collections.abc import Sequence
 from .config import Config, load_config
 from .errors import MediaLabError
 from .kino import KinoRunner
+from .ml_runner import MlRunner
 from .paths import clear_work_directory
 from .pipeline import run_pipeline
 from .recipes.audio_bed import add_music_bed
 from .recipes.backdrop import place_on_backdrop
 from .recipes.cutout import DEVICE_CHOICES, QUALITY_CHOICES, cut_out_person
 from .recipes.filters import LOOKS, apply_look, apply_look_chain
+from .recipes.matte_video import MODEL_CHOICES, matte_video
 from .recipes.to_short import to_short
 from .verify import ASPECT_RATIOS
 
@@ -45,6 +47,10 @@ def build_parser() -> argparse.ArgumentParser:
     _add_io_arguments(cutout)
     cutout.add_argument("--quality", choices=QUALITY_CHOICES, default="balanced")
     cutout.add_argument("--device", choices=DEVICE_CHOICES, default="auto")
+
+    matte = subcommands.add_parser("matte", help="Matte a person out of a video with RVM")
+    _add_io_arguments(matte)
+    matte.add_argument("--model", choices=MODEL_CHOICES, default="resnet50")
 
     backdrop = subcommands.add_parser("backdrop", help="Composite a cutout onto a backdrop")
     _add_io_arguments(backdrop)
@@ -152,6 +158,22 @@ def _run_cutout(args: argparse.Namespace, config: Config, runner: KinoRunner) ->
     print(f"  model {result.model} on {result.provider}")
     print(f"  {result.frames_processed} frames at {result.ms_per_frame:.0f} ms/frame")
     print(f"  alpha spread {result.alpha_spread}/255 (0 would mean nothing was cut)")
+    return 0
+
+
+def _run_matte(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    result = matte_video(
+        args.input,
+        args.output,
+        config,
+        MlRunner.from_config(config),
+        model=args.model,
+        force=args.force,
+    )
+    print(f"matte written to {args.output}")
+    print(f"  model {result.model}, {result.frames} frames")
+    print(f"  alpha spread {result.alpha_spread}/255 (0 would mean nothing was separated)")
+    print(f"  stability score {result.stability_score:.2f} (lower = less flicker)")
     return 0
 
 
@@ -263,6 +285,7 @@ def _run_short(args: argparse.Namespace, config: Config, runner: KinoRunner) -> 
 HANDLERS = {
     "clean": _run_clean,
     "cutout": _run_cutout,
+    "matte": _run_matte,
     "backdrop": _run_backdrop,
     "filter": _run_filter,
     "music": _run_music,

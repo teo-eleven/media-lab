@@ -40,7 +40,13 @@ select = ["E", "F", "I", "B", "UP", "SIM", "RET"]
 python_version = "3.12"
 strict = true
 files = ["src", "tests"]
+# rvm_infer.py runs as a subprocess in a context that has torch + the RVM
+# checkout on sys.path; it is not part of the typed library surface.
+exclude = ["src/media_lab/ml/rvm_infer\\.py$"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --cov=media_lab --cov-report=term-missing"
+addopts = "-q --cov=media_lab --cov-report=term-missing -m 'not slow'"
+markers = [
+    "slow: real ML runs (RVM). Deselected by default; run with -m slow.",
+]

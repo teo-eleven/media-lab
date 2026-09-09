@@ -436,7 +436,17 @@ skill/subagent wrappers (Phase 4).
   any present), rather than only printing the URLs — more useful, idempotent,
   and it means `media-lab doctor` goes straight to `(ok)`. No checksum pinning:
   RVM publishes none; the script says so.
-- [ ] Step 3 — matte-video + rvm_infer + CLI
+- **Step 3:** `rvm_infer.py` computes the stability score itself (streaming, in
+  the child) and writes it to `stats.json`; the recipe reads it rather than
+  recomputing from per-frame stats (per-frame mean/var cannot express the
+  pixel-level flicker the S0 formula needs). `alpha_lift`/`alpha_gain` default
+  to identity (a general tool), not v23's 18/1.28 — the punto runner passes
+  `V23_ALPHA_LIFT`/`V23_ALPHA_GAIN` explicitly. Added a `slow` pytest marker +
+  `-m 'not slow'` to `addopts`; `rvm_infer.py` is mypy-excluded (it imports
+  torch + the RVM checkout only present at runtime). Real smoke run:
+  `media-lab matte in/punto-source.mp4 --model mobilenetv3` -> 193 frames,
+  alpha spread 255, score 5.29, ~42 s, verify-render 0 problems.
+- [x] Step 3 — matte-video + rvm_infer + CLI
 - [ ] Step 4 — compose_spec builder (pure)
 - [ ] Step 5 — compose-spec recipe + CLI
 - [ ] Step 6 — contact_sheet + proxy-preview + CLI
