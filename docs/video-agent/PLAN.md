@@ -70,6 +70,29 @@ test machine in test time.
 **Done when:** RGBA PNGs exist for the synthetic clip and the score is
 computed; no project code written.
 
+**S0 findings (run 2026-09-09, `work/spike-s0/`, 12 real punto frames):**
+
+- Child-process mechanism **works**: `subprocess.run([sys.executable,
+rvm_driver.py, rvm_repo, weights, model, in, out])`; the driver does
+  `sys.path.insert(0, rvm_repo)` then `from model import MattingNetwork`
+  (RVM's `model/__init__.py` re-exports it). `torch` / RVM are never imported
+  in the orchestrator process. `torch.load(..., weights_only=True)` (RVM
+  weights are pure state dicts — avoids the pickle-RCE warning).
+- Real matte: alpha spread 255, fg fraction ~0.076/frame, `alpha_mean` drifts
+  17.4 → 18.7 smoothly across 12 frames (subject moving, no flicker).
+- **Score formula:** `stability_score` = mean absolute frame-to-frame alpha
+  delta over ever-foreground pixels (`|Δα|` on pixels where `max_t α > 10`),
+  in 0–255 units, lower = stabler. RVM/mobilenetv3 on this clip: **~6.5**.
+  (All-pixel delta ~0.57 is diluted by the static-zero background; temporal
+  std ~19 conflates real subject motion with flicker — rejected.) Phase 1
+  only reports the number; a threshold gate is `matte-qc` (Phase 3).
+- **Timing:** mobilenetv3 12 frames = 6.8 s cold (model load + MPS warmup
+  dominate). Steady-state ~0.06 s/frame matches the README. `resnet50` not
+  yet timed on this machine — Step 3's opt-in slow test will; mechanism is
+  identical.
+- Migration `/tmp/RVM` → `tools/RobustVideoMatting/` is Step 1
+  (`scripts/fetch-rvm.sh`); the spike ran against `/tmp/RVM` directly.
+
 ### S1 — filtergraph port · ~2–3 h · agent: manual (ffmpeg work), then
 
 `python-pro` review of the builder sketch
@@ -93,6 +116,34 @@ v23, and any ffmpeg-9 behaviour differences.
 
 **Done when:** a throwaway builder produces a filtergraph that renders a
 visually-matching short clip; no project code written.
+
+**S1 findings (run 2026-09-09, `work/spike-s1/build.py`, real v23 inputs:
+`in/backgrounds/nyc-wallst.mp4` + `work/punto-edit/isnet/placed/` 193 frames):**
+
+- A frozen `Spec` dataclass → 3 arg lists (bg-prep, composite+occlusion,
+  grade+encode). Runs on ffmpeg 9 **unchanged**. Wall time ~1m40s for 193
+  frames at 2160×3840.
+- Output: 2160×3840, 30 fps, 193 frames, 6.433 s, yuv420p, 64 MB — **exact
+  container match** to `out/punto-final_2160x3840_30fps_h264-crf17.mp4`
+  (66 MB; the delta is x264 + noise seed).
+- Frame fidelity vs the real v23 render (4 samples): `mean|Δ| ≈ 2.6/255`,
+  `p99|Δ| ≈ 9–10`, no diff spike at `y=3710` (the occlusion-strip seam) →
+  the graph is structurally faithful; the residual is `noise=alls=4:allf=t`
+  running a different seed. **Bit-exact is impossible; use `mean|Δ| < ~5/255`
+  on sampled frames as the numeric half of the Step 7 acceptance, alongside
+  the contact-sheet eyeball (confirms SPEC A5).**
+- zsh/`fade` pitfalls: gone — it is a `list[str]`, no shell; v23 uses hard
+  cuts, no `fade`.
+- Occlusion `geq` ports verbatim: on `crop={w}:{occ_h}:0:{occ_y}`,
+  `a='if(lt(Y,{feather}),255*Y/{feather},255)'`. Params: `occ_h=130`,
+  `occ_y=3710`, `occ_feather=70`.
+- Grade chain ported verbatim (atmosphere `format=gbrp,split` →
+  `scale=iw/6:ih/6,gblur=sigma=7,scale=W:H:flags=bilinear,eq=brightness=0.03`
+  → `blend=all_mode=screen:all_opacity=0.07` → `eq` / `colorbalance` /
+  `curves=master='0/0.01 0.5/0.5 1/0.993'` / `unsharp=5:5:0.24` /
+  `vignette=PI/5.8` / `noise=alls=4:allf=t` → `format=yuv420p`). **No
+  ffmpeg-9 behaviour differences observed.** Step 4 moves these constants
+  into `GRADE_PROFILES["v23"]`; the spike proves the emitted string is right.
 
 Spikes are throwaway (`work/`), not committed. Findings are appended to this
 file and folded into the steps below.
