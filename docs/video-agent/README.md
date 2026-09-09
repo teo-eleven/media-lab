@@ -6,7 +6,11 @@ placed into new locations). No media lives here — only the code, the recipe, a
 the lessons. Media stays in the (gitignored) `in/ out/ work/` dirs.
 
 Runs on: macOS Apple Silicon (MPS), **no CUDA**. `ffmpeg` 9.0 static in `../../bin/`.
-Python: a 3.12 venv (`.venv`, project) and throwaway venvs for the ML bits.
+Python: the project 3.12 `.venv`. It already carries `torch` / `torchvision` /
+`basicsr` / `realesrgan` (via `kinocut[upscale]`), so RVM matting and
+Real-ESRGAN run there. Only two things need a separate venv: rembg/isnet
+(`.matte-venv`, Phase 2) and IC-Light (`.gen-venv`, GPU box only — does not run
+here).
 
 ---
 
@@ -81,16 +85,21 @@ variables at the top (bg clip, offsets, occlusion strip Y) per shot.
 
 ---
 
-## Install (throwaway venvs)
+## Install
 
 ```sh
-# matting + upscale
-python3 -m venv .rvm-venv && .rvm-venv/bin/pip install torch torchvision pillow numpy
-#   + clone github.com/PeterL1n/RobustVideoMatting, weights from its releases
-python3 -m venv .matte-venv && .matte-venv/bin/pip install "rembg[cpu]" pillow onnxruntime scipy
-.venv/bin/pip install realesrgan basicsr   # + the functional_tensor shim
+# torch / torchvision / basicsr / realesrgan + the functional_tensor shim
+# come from `make setup` (kinocut[upscale] + scripts/patch-basicsr-shim.sh).
 
-# generative (kept for a GPU box; does not run on MPS in usable time)
+# RVM matting: a source checkout on sys.path (GPL-3, never committed) + weights
+git clone https://github.com/PeterL1n/RobustVideoMatting tools/RobustVideoMatting
+#   weights: rvm_resnet50.pth / rvm_mobilenetv3.pth from that repo's releases,
+#   into work/punto-edit/gen/weights/ (or MEDIA_LAB_WEIGHTS_DIR)
+
+# Phase 2 only — rembg / isnet fallback (its own py3.9 venv):
+python3 -m venv .matte-venv && .matte-venv/bin/pip install "rembg[cpu]" pillow onnxruntime scipy
+
+# Out of scope — IC-Light generative relight (GPU box only, does not run here):
 python3 -m venv .gen-venv && .gen-venv/bin/pip install torch torchvision diffusers transformers accelerate safetensors
 ```
 

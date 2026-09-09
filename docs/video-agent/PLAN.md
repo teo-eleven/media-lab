@@ -17,51 +17,55 @@ Code, comments, commit messages: English. All new code extends the
 
 ## Architecture at a glance
 
-| New file                                 | Role                                                                                                                                                     |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/media_lab/ml_runner.py`             | The **only** module that shells out to the `.rvm-venv` Python. Timeout, stderr capture, typed `MlEnvError`. Sibling of `kino.py` / `ffmpeg.py`.          |
-| `src/media_lab/ml/rvm_infer.py`          | Our driver script, run _inside_ `.rvm-venv`. Imports RVM's `MattingNetwork`, writes an RGBA PNG sequence + a JSON stats blob (per-frame alpha mean/var). |
-| `src/media_lab/recipes/matte_video.py`   | `matte-video` recipe: orchestrates `rvm_infer` via `ml_runner`, muxes ProRes 4444 `.mov`, computes the alpha-stability score, verifies.                  |
-| `src/media_lab/compose_spec.py`          | Pure filtergraph builder + YAML schema + validation. No I/O.                                                                                             |
-| `src/media_lab/recipes/compose_spec.py`  | `compose-spec` recipe: load YAML → build → write `.filtergraph.txt` sidecar → run via `ffmpeg.py` → verify.                                              |
-| `src/media_lab/contact_sheet.py`         | Shared: extract N frames, tile a sheet, tile a side-by-side. Used by proxy-preview and the punto runner.                                                 |
-| `src/media_lab/recipes/proxy_preview.py` | `proxy-preview` recipe: low-res proxy encode + contact sheet + optional `--compare` side-by-side.                                                        |
-| `src/media_lab/recipes/punto_v23.py`     | `punto` runner: matte-video → upscale (unchanged script) → place (unchanged script) → compose-spec → contact sheet; `--proxy` fast path.                 |
-| `scripts/fetch-rvm.sh`                   | Clone RVM to `tools/RobustVideoMatting/`, build `.rvm-venv`, print the weights-download commands. Sibling of `scripts/fetch-ffmpeg.sh`.                  |
+| New file                                 | Role                                                                                                                                                                                                                                                                              |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/media_lab/ml_runner.py`             | The **only** module that runs an ML driver as a child process (project interpreter, `sys.executable`). Timeout, stderr capture, typed `MlEnvError`. Sibling of `kino.py` / `ffmpeg.py`. The child process is the GPL boundary — RVM is never imported into `media_lab`'s process. |
+| `src/media_lab/ml/rvm_infer.py`          | Our driver script, run as a child process. `sys.path.insert(0, rvm_repo)`, imports RVM's `MattingNetwork`, writes an RGBA PNG sequence + a JSON stats blob (per-frame alpha mean/var).                                                                                            |
+| `src/media_lab/recipes/matte_video.py`   | `matte-video` recipe: orchestrates `rvm_infer` via `ml_runner`, muxes ProRes 4444 `.mov`, computes the alpha-stability score, verifies.                                                                                                                                           |
+| `src/media_lab/compose_spec.py`          | Pure filtergraph builder + YAML schema + validation. No I/O.                                                                                                                                                                                                                      |
+| `src/media_lab/recipes/compose_spec.py`  | `compose-spec` recipe: load YAML → build → write `.filtergraph.txt` sidecar → run via `ffmpeg.py` → verify.                                                                                                                                                                       |
+| `src/media_lab/contact_sheet.py`         | Shared: extract N frames, tile a sheet, tile a side-by-side. Used by proxy-preview and the punto runner.                                                                                                                                                                          |
+| `src/media_lab/recipes/proxy_preview.py` | `proxy-preview` recipe: low-res proxy encode + contact sheet + optional `--compare` side-by-side.                                                                                                                                                                                 |
+| `src/media_lab/recipes/punto_v23.py`     | `punto` runner: matte-video → upscale (unchanged script) → place (unchanged script) → compose-spec → contact sheet; `--proxy` fast path.                                                                                                                                          |
+| `scripts/fetch-rvm.sh`                   | Clone RVM to `tools/RobustVideoMatting/` (git-ignored, GPL-3, never committed) and print the weights-download commands. No venv. Sibling of `scripts/fetch-ffmpeg.sh`.                                                                                                            |
 
-| Changed file                                                            | Change                                                                                                                      |
-| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `src/media_lab/config.py`                                               | Add `rvm_venv`, `rvm_repo`, `weights_dir` fields + `.env` keys. Lazily validated (a `require_ml()` helper), not at startup. |
-| `src/media_lab/ffmpeg.py`                                               | Add `run_filtergraph(...)` helper (build `-filter_complex` + `-map` + encode args, go through `run_ffmpeg`).                |
-| `src/media_lab/errors.py`                                               | Add `MlEnvError(MediaLabError)`, `SpecError(MediaLabError)`.                                                                |
-| `src/media_lab/cli.py`                                                  | Add subcommands: `matte`, `compose`, `proxy`, `punto`. Extend `doctor` to print ML state.                                   |
-| `.env.example`, `README.md`, `docs/video-agent/README.md`, `.gitignore` | `tools/`, `.rvm-venv/` ignored; new env vars documented.                                                                    |
-| `DECISIONS.md` (root)                                                   | New dated entries as decisions land.                                                                                        |
+| Changed file                                                            | Change                                                                                                          |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `src/media_lab/config.py`                                               | Add `rvm_repo`, `weights_dir` fields + `.env` keys. Lazily validated (a `require_ml()` helper), not at startup. |
+| `src/media_lab/ffmpeg.py`                                               | Add `run_filtergraph(...)` helper (build `-filter_complex` + `-map` + encode args, go through `run_ffmpeg`).    |
+| `src/media_lab/errors.py`                                               | Add `MlEnvError(MediaLabError)`, `SpecError(MediaLabError)`.                                                    |
+| `src/media_lab/cli.py`                                                  | Add subcommands: `matte`, `compose`, `proxy`, `punto`. Extend `doctor` to print ML state.                       |
+| `.env.example`, `README.md`, `docs/video-agent/README.md`, `.gitignore` | `tools/` ignored; new env vars documented.                                                                      |
+| `DECISIONS.md` (root)                                                   | New dated entries as decisions land.                                                                            |
 
-`pyproject.toml` gains one dev dependency: **`pyyaml`** (+ `types-PyYAML` for
-mypy). No torch in the project `.venv` — it lives only in `.rvm-venv`.
+`pyproject.toml` gains one **runtime** dependency: **`pyyaml`** (compose-spec
+parses YAML at run time), plus `types-PyYAML` in the dev group for mypy.
+`torch`, `torchvision`, `basicsr` and `realesrgan` are **already** in `.venv`
+and `uv.lock` via `kinocut[upscale]` — no new ML dependency, and no separate
+venv. `rvm_infer.py` runs in a child process only to keep GPL-3 RVM code out
+of `media_lab`'s own process.
 
 ---
 
 ## Spikes (do these first — they de-risk the rest)
 
-### S0 — ML environment boundary · ~2–3 h · agent: `debugger` for the RVM
+### S0 — ML environment boundary · ~2–3 h · agent: `debugger` for the RVM run, otherwise manual
 
-run, otherwise manual
+**Question it answers:** can we drive RVM headless as a child process using the
+project interpreter (torch is already in `.venv`), with the RVM clone on
+`sys.path`, and what is a sound alpha-stability score formula?
 
-**Question it answers:** can we drive RVM headless from a separate venv via
-subprocess, and what is a sound alpha-stability score formula?
+**Do:** migrate `/tmp/RVM` → `tools/RobustVideoMatting/`. Write a throwaway
+script in `work/` that: takes a ~10-frame synthetic clip
+(`ffmpeg lavfi testsrc`), runs RVM (`rvm_mobilenetv3.pth`) via
+`subprocess.run([sys.executable, driver, ...])` where `driver` does
+`sys.path.insert(0, "tools/RobustVideoMatting")` + `from model import
+MattingNetwork`, writes RGBA PNGs, and prints per-frame alpha mean/variance and
+a candidate single-number score. Confirm the frames carry a real matte.
 
-**Do:** migrate `/tmp/RVM` → `tools/RobustVideoMatting/`. Build a throwaway
-`.rvm-venv` (`torch torchvision pillow numpy`). Write a throwaway script in
-`work/` that: takes a ~10-frame synthetic clip (`ffmpeg lavfi testsrc`), runs
-RVM (`rvm_mobilenetv3.pth`) through `subprocess.run` against that venv's
-python, writes RGBA PNGs, and prints per-frame alpha mean/variance and a
-candidate single-number score. Confirm the frames carry a real matte.
-
-**Output:** a note in this file (S0 findings) fixing: the exact venv build
-command, the `sys.path` / import shape for RVM, the score formula, and whether
-`resnet50` is feasible on the test machine in test time.
+**Output:** a note in this file (S0 findings) fixing: the `sys.path` / import
+shape for RVM, the score formula, and whether `resnet50` is feasible on the
+test machine in test time.
 
 **Done when:** RGBA PNGs exist for the synthetic clip and the score is
 computed; no project code written.
@@ -107,39 +111,41 @@ each other — they can be delegated to `fork` subagents running alongside step 
 
 **Depends on:** S0.
 
-**Build:** `config.py` gains `rvm_venv`, `rvm_repo`, `weights_dir` (defaults:
-`./.rvm-venv`, `./tools/RobustVideoMatting`, `./work/punto-edit/gen/weights`,
-resolved like the existing dir fields). A `require_ml(config)` helper checks
-all three exist and raises `MlEnvError` with the `fetch-rvm.sh` hint —
-**called by recipes, never at startup**. `scripts/fetch-rvm.sh`: clone RVM
-(GPL-3, kept out of git), `python3 -m venv .rvm-venv` + pip install, echo the
-weights URLs. `doctor` prints `rvm venv`, `rvm repo`, `weights` with an
-`(ok)` / `(not configured)` marker. `.gitignore` += `tools/`, `.rvm-venv/`.
+**Build:** `config.py` gains `rvm_repo`, `weights_dir` (defaults:
+`./tools/RobustVideoMatting`, `./work/punto-edit/gen/weights`, resolved like
+the existing dir fields). A `require_ml(config)` helper checks both exist (and
+that the expected weight files are under `weights_dir`) and raises `MlEnvError`
+with the `fetch-rvm.sh` hint — **called by recipes, never at startup**.
+`scripts/fetch-rvm.sh`: clone RVM to `tools/RobustVideoMatting/` (GPL-3, kept
+out of git) and echo the weights URLs — no venv (torch is already in `.venv`).
+`doctor` prints `rvm repo`, `weights` with an `(ok)` / `(not configured)`
+marker. `.gitignore` += `tools/`.
 
 **Files:** `config.py`, `errors.py`, `cli.py` (`doctor`), `scripts/fetch-rvm.sh`,
 `.env.example`, `.gitignore`.
 
 **Tests:** `tests/test_config.py` extended — new fields parsed from env;
 defaults; `require_ml` raises with the right message when a path is missing;
-`require_ml` passes when all present (use `tmp_path` dirs). `doctor` output
-contains the ML lines (extend `tests/test_cli.py`).
+`require_ml` passes when both present (use `tmp_path` dirs with stub weight
+files). `doctor` output contains the ML lines (extend `tests/test_cli.py`).
 
 **Agent:** manual + `python-reviewer` at the end.
 
 **Vertical check:** `make check` green; `media-lab doctor` runs and shows ML
-state on a machine without `.rvm-venv`.
+state on a machine without the RVM clone.
 
 ---
 
-### Step 2 — `ml_runner.py` (single sanctioned exit to `.rvm-venv`)
+### Step 2 — `ml_runner.py` (single sanctioned exit for ML subprocesses)
 
 **Depends on:** 1.
 
 **Build:** `MlRunner` dataclass, `from_config`, `.run(script, args, *, timeout_s)`
-→ `subprocess.run([rvm_venv/bin/python, script, *args], …)` with the project
-env, capture stderr, raise `MlEnvError` on non-zero / timeout. Mirrors
-`KinoRunner`. No RVM knowledge here — it just runs a python script in the ML
-venv.
+→ `subprocess.run([sys.executable, script, *args], …)` with the project env,
+capture stderr, raise `MlEnvError` on non-zero / timeout. Mirrors `KinoRunner`.
+No RVM knowledge here — it just runs a python script as a child process. The
+child boundary exists so GPL-3 RVM code is never imported into `media_lab`'s
+own process and so `torch` is not imported unless matting runs.
 
 **Files:** `ml_runner.py`, `errors.py` (if not already in 1).
 
@@ -160,10 +166,12 @@ stdout; non-zero raises `MlEnvError` with stderr tail; `TimeoutExpired` raises
 
 **Depends on:** 2.
 
-**Build:** `src/media_lab/ml/rvm_infer.py` (runs inside `.rvm-venv`): argv =
-frames-dir in, dir out, model name, weights path; writes `f-%04d.png` RGBA +
+**Build:** `src/media_lab/ml/rvm_infer.py` (run as a child process; first line
+after imports: `sys.path.insert(0, <rvm_repo>)`): argv = frames-dir in, dir
+out, model name, weights path, rvm-repo path; writes `f-%04d.png` RGBA +
 `stats.json` (`[{frame, alpha_mean, alpha_var}]`). Logic lifted from
-`pipeline/matte_rvm.py`, parametrised, no hardcoded paths.
+`pipeline/matte_rvm.py`, parametrised, no hardcoded paths (drop its
+`sys.path.insert(0, "/tmp/RVM")` and hardcoded weights/glob).
 `recipes/matte_video.py`: `matte_video(source, output, config, ml_runner, *,
 model="resnet50", force=False)` → `require_ml` → explode source to PNGs under
 `work/<stem>-frames/` via `run_ffmpeg` → `ml_runner.run("ml/rvm_infer.py", …)`
@@ -181,7 +189,7 @@ them.
 drop a canned RGBA PNG sequence + `stats.json` into the expected dir, then
 assert the `.mov` is built, alpha is non-uniform, the score matches the canned
 stats, and `force` / missing-source / bad-model paths behave. **Opt-in:** a
-`@pytest.mark.slow` test (skipped unless `.rvm-venv` + weights present) that
+`@pytest.mark.slow` test (skipped unless the RVM clone + weights present) that
 runs real `rvm_infer.py` on a 10-frame `testsrc` clip.
 
 **Agent:** `python-pro` for the recipe; `tdd-guide` for the test file;
@@ -285,21 +293,37 @@ after.
 **Depends on:** 3, 5, 6.
 
 **Build:** `recipes/punto_v23.py`: `run_punto(config, ml_runner, output, *,
-proxy=False, force=False)`. Full path: `matte_video(in/punto-source.mp4)` →
-**stage** its frames into `work/punto-edit/isnet/cut/` (the path
-`upscale_realesrgan.py` hardcodes) → `ml_runner.run` on
-`pipeline/upscale_realesrgan.py` → stage `…/isnet/up/` → run
-`pipeline/place_composite.py` → emit a `punto-v23.yaml` spec pointing at
+proxy=False, force=False)`.
+
+The two unchanged scripts have hardcoded, mutually inconsistent I/O dirs (audit
+M2) — the runner stages around them precisely (audit M3):
+
+- `upscale_realesrgan.py` reads `work/punto-edit/isnet/cut/`, writes
+  `work/punto-edit/isnet/up/`.
+- `place_composite.py` reads `work/punto-edit/rvm_up/` **iff** it exists and
+  holds > 100 files, else falls back to `work/punto-edit/isnet/cut/`; writes
+  `work/punto-edit/isnet/placed/`.
+
+Full path: `matte_video(in/punto-source.mp4)` → write its RGBA frames to
+`work/punto-edit/isnet/cut/f-%04d.png` (720×1280) → `ml_runner.run` on
+`pipeline/upscale_realesrgan.py` → **move** `work/punto-edit/isnet/up/` →
+`work/punto-edit/rvm_up/` so `place_composite.py` picks the upscaled frames →
+run `pipeline/place_composite.py` → emit a `punto-v23.yaml` spec pointing at
 `work/punto-edit/isnet/placed/` + `in/backgrounds/nyc-wallst.mp4` with the v23
 occlusion + grade → `compose(...)` → `contact_sheet` vs
 `out/punto-final_2160x3840_30fps_h264-crf17.mp4` → `verify_render` against the
-v23 container spec. `--proxy`: `model="mobilenetv3"`, skip the upscale +
-staging step, `height=540` in the spec, skip the reference compare.
+v23 container spec.
 
-The two unchanged scripts (`upscale_realesrgan.py`, `place_composite.py`) are
-called **as-is**; the runner creates the `work/punto-edit/…` directory layout
-they expect (SPEC A6). This staging shim is the documented Phase-2 cleanup
-point.
+`--proxy`: `model="mobilenetv3"`, **skip upscale and the `rvm_up/` move** —
+`place_composite.py` then falls back to the 720×1280 `isnet/cut/` frames, so
+the placed subject is ~half v23 scale (acceptable for a rough preview; the
+runner prints this caveat). `height=540` in the spec; skip the reference
+compare.
+
+The two scripts (`upscale_realesrgan.py`, `place_composite.py`) are called
+**as-is** via `ml_runner` from the repo root (they resolve `work/…` relative
+to cwd). This staging shim is the documented Phase-2 cleanup point (fold them
+into real `upscale` / `subject-ground` tools).
 
 **Files:** `recipes/punto_v23.py`, `cli.py`, a checked-in
 `docs/video-agent/punto-v23.yaml` template.
@@ -323,17 +347,17 @@ visual match.
 
 **Depends on:** 1–7.
 
-**Build:** `README.md` (root) — new commands table rows, `tools/` +
-`.rvm-venv/` in the layout, an ML-setup subsection. `docs/video-agent/README.md`
-— point the "Pipeline" section at the new commands. `.env.example` — the three
-ML vars (done in step 1, re-check). `PLAN.md` — tick every step, record
-deviations. `DECISIONS.md` — fold in anything the spikes changed. Grep the repo
-for stale references (old script paths, `/tmp/RVM`).
+**Build:** `README.md` (root) — new commands table rows, `tools/` in the
+layout, an ML-setup subsection. `docs/video-agent/README.md` — point the
+"Pipeline" section at the new commands. `.env.example` — the two ML vars (done
+in step 1, re-check). `PLAN.md` — tick every step, record deviations.
+`DECISIONS.md` — fold in anything the spikes changed. Grep the repo for stale
+references (old script paths, `/tmp/RVM`).
 
 **Files:** the docs above.
 
 **Tests:** none new; `make check` stays green. Manually follow the README
-ML-setup steps from scratch (fresh `.rvm-venv`).
+ML-setup steps from scratch (clone RVM to `tools/`, download weights).
 
 **Agent:** `doc-updater`; final `code-review` skill over the whole branch.
 

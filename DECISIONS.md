@@ -23,34 +23,41 @@ infrastructure per skill. A thin skill/agent wrapper is a Phase 4 concern.
 
 ---
 
-## 2026-09-09 — Run RVM through a separate venv via subprocess
+## 2026-09-09 — Run RVM in a child process, reusing the project venv
 
-**Context.** `matte-video` wraps Robust Video Matting. RVM needs
-`torch` + `torchvision`; the project `.venv` deliberately carries neither, and
-RVM is **GPL-3.0** — vendoring its source into this (otherwise permissively
-licensed) repo would be a licensing problem.
+**Context.** `matte-video` wraps Robust Video Matting. RVM is **GPL-3.0** and is
+used as a source checkout (`from model import MattingNetwork`), not a package —
+`import`ing it into `media_lab`'s own process would make our process a
+derivative work. RVM needs `torch` + `torchvision`; an audit on 2026-09-09
+found the project `.venv` **already carries both** (plus `basicsr` and
+`realesrgan`) because `kinocut[upscale]` declares `torch>=2.0` — they are in
+`uv.lock`. An earlier draft of this entry assumed the opposite and proposed a
+second venv; that rationale was wrong.
 
-**Chosen.** Clone RVM to `tools/RobustVideoMatting/` (git-ignored), build a
-git-ignored `.rvm-venv` at the project root, and invoke it only through a new
-`ml_runner.py` module — the single sanctioned exit to that venv, exactly as
-`kino.py` is for kinocut and `ffmpeg.py` for direct ffmpeg. Our driver code
-that imports RVM (`src/media_lab/ml/rvm_infer.py`) runs inside `.rvm-venv` as a
-subprocess.
+**Chosen.** Clone RVM to `tools/RobustVideoMatting/` (git-ignored, never
+committed — GPL). Invoke it through a new `ml_runner.py` module — the single
+sanctioned exit for ML subprocesses, as `kino.py` is for kinocut and
+`ffmpeg.py` for direct ffmpeg. `ml_runner` runs a driver script
+(`src/media_lab/ml/rvm_infer.py`) as a **child process using the project
+interpreter** (`sys.executable`); the driver puts the RVM clone on `sys.path`,
+imports it there, and writes an RGBA PNG sequence + a JSON stats file. No
+separate venv.
 
-**Trade-off accepted.** A third external process boundary and a second
-recreatable-but-not-committed environment (alongside `bin/` and `.venv/`).
-Data crosses the boundary as an RGBA PNG sequence + a JSON stats file rather
-than in-process tensors. In exchange, torch stays out of `uv sync`, mypy strict
-and ruff never see it, GPL code never enters the repo, and a torch/RVM break
-hits one module.
+**Trade-off accepted.** One extra process boundary and a git-ignored source
+checkout to recreate (alongside `bin/`). Data crosses as files, not tensors.
+In exchange: GPL code is never imported into our process and never enters the
+repo; `torch` (a ~1 s import) stays out of the main CLI process unless matting
+is actually run; a torch/RVM break is contained to one module. Cost of the
+correction: `ml_runner.py` is thinner than a full venv-switching runner, but
+kept for the process boundary and the timeout/stderr/typed-error wrapper.
 
 ---
 
 ## 2026-09-09 — ML paths are lazily-validated config, not startup-validated
 
 **Context.** `config.py` validates everything at startup so the project fails
-loudly rather than mid-render. The new `rvm_venv` / `rvm_repo` / `weights_dir`
-paths only matter to `matte-video`.
+loudly rather than mid-render. The new `rvm_repo` / `weights_dir` paths only
+matter to `matte-video`.
 
 **Chosen.** Add them to `Config` with project-root-relative defaults, but check
 them in a `require_ml(config)` helper the recipe calls — not in `load_config`.

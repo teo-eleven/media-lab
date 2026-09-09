@@ -84,7 +84,7 @@ Definition of done for Phase 1:
 - Each tool has its own test suite: happy path + ≥2 edge cases + 1 error case,
   `make check` green (ruff + mypy strict + pytest), coverage ≥ 80% on the new
   modules. ML calls are mocked by default; one opt-in slow test runs real RVM
-  on a ~10-frame synthetic clip when `.rvm-venv` and weights are present.
+  on a ~10-frame synthetic clip when the RVM clone and weights are present.
 - `media-lab punto` reproduces the v23 render: the output matches
   `out/punto-final_2160x3840_30fps_h264-crf17.mp4` on **container spec**
   (2160×3840, 30 fps, ~6.43 s ± 0.1, no audio, H.264 High, yuv420p) as checked
@@ -116,8 +116,10 @@ Definition of done for Phase 1:
 
 - **Productising `upscale` and `subject-ground`.** Deferred to Phase 2.
   Blocking decision now: the `punto` runner stages files into the exact
-  `work/punto-edit/…` paths those scripts hardcode, rather than parametrising
-  them. If Phase 2 parametrises the scripts, the staging shim is deleted.
+  `work/punto-edit/…` paths those scripts hardcode — which do **not** chain
+  as-is (audit M2: upscale writes `isnet/up/`, place reads `rvm_up/` or
+  `isnet/cut/`), so the runner also moves `isnet/up/` → `rvm_up/` between the
+  two. If Phase 2 parametrises the scripts, this staging shim is deleted.
 - **`matte-video` multi-backend.** Deferred to Phase 2. The Phase-1 recipe
   keeps the backend behind a `--model` flag on one code path, so adding an
   `isnet` branch later is additive, not a rewrite.
@@ -130,10 +132,10 @@ Definition of done for Phase 1:
 No database. The "entities" are files on disk and one config object.
 
 - **Config** — resolved from `.env` + environment at startup
-  (`src/media_lab/config.py`). Phase 1 adds three fields for ML paths
-  (`rvm_venv`, `rvm_repo`, `weights_dir`), **validated lazily** — only when
-  `matte-video` runs, so `doctor` and the non-ML commands work without torch
-  installed. Source of truth: `.env` (git-ignored), documented in
+  (`src/media_lab/config.py`). Phase 1 adds two fields for ML paths
+  (`rvm_repo`, `weights_dir`), **validated lazily** — only when `matte-video`
+  runs, so `doctor` and the non-ML commands work without the RVM clone or
+  weights present. Source of truth: `.env` (git-ignored), documented in
   `.env.example`.
 - **Source clip** — under `in/`, read-only, never modified. Source of truth:
   the user's `in/` directory. `in/punto-source.mp4` is the Phase-1 fixture
@@ -158,10 +160,10 @@ No database. The "entities" are files on disk and one config object.
 
 ## Ugly cases
 
-- **Missing ML setup** (`.rvm-venv` / RVM clone / weights absent) —
-  `matte-video` raises a typed `MlEnvError` naming the missing piece and the
-  `scripts/fetch-rvm.sh` command that installs it. `doctor` reports ML state
-  as "not configured" without failing. Other commands are unaffected.
+- **Missing ML setup** (RVM clone or weights absent) — `matte-video` raises a
+  typed `MlEnvError` naming the missing piece and the `scripts/fetch-rvm.sh`
+  command that installs it. `doctor` reports ML state as "not configured"
+  without failing. Other commands are unaffected.
 - **Missing / empty source, output already exists, output outside the
   project** — handled by the existing `paths.py` contract (unchanged).
 - **RVM drops the held sign** — Phase 1 does not detect this
@@ -197,12 +199,14 @@ No database. The "entities" are files on disk and one config object.
 - **Honesty of reporting.** No render is reported done before `verify_render`
   passes. The alpha-stability score and any `verify` warnings are always
   printed.
-- **Reproducibility.** `.rvm-venv`, the RVM clone and the weights are
-  git-ignored but recreatable from `scripts/fetch-rvm.sh` + documented
-  commands, the same contract as `bin/` and `.venv/`.
-- **Failure isolation.** RVM/torch live behind a single module
-  (`ml_runner.py`), the same way all `kino` calls live behind `kino.py` and
-  all direct ffmpeg calls behind `ffmpeg.py`.
+- **Reproducibility.** The RVM clone (`tools/RobustVideoMatting/`) and the
+  weights are git-ignored but recreatable from `scripts/fetch-rvm.sh` +
+  documented commands, the same contract as `bin/`. `torch` etc. are already
+  pinned in `uv.lock` via `kinocut[upscale]`.
+- **Failure isolation.** RVM runs as a child process behind a single module
+  (`ml_runner.py`), so GPL-3 code is never imported into `media_lab` and a
+  torch/RVM break hits one module — the same containment `kino.py` gives
+  kinocut and `ffmpeg.py` gives direct ffmpeg.
 
 ## Success criteria
 
@@ -221,9 +225,10 @@ No database. The "entities" are files on disk and one config object.
 ## Assumptions
 
 - **A1** — one user, local, one job at a time, no CI, no headless runs.
-- **A2** — `.rvm-venv` lives at the project root, git-ignored, built by
-  `scripts/fetch-rvm.sh` (Python 3.9 system or 3.12 via `uv venv`; RVM runs on
-  both).
+- **A2** — RVM is a git-ignored source checkout at `tools/RobustVideoMatting/`
+  (cloned by `scripts/fetch-rvm.sh`), put on `sys.path` by the child-process
+  driver. No dedicated venv: `torch` / `torchvision` are already in `.venv`
+  via `kinocut[upscale]`. The child process exists for the GPL-3 boundary.
 - **A3** — weights stay where they are now
   (`work/punto-edit/gen/weights/{rvm_resnet50,rvm_mobilenetv3,RealESRGAN_x2plus}.pth`);
   the default `MEDIA_LAB_WEIGHTS_DIR` points there. Provenance (GitHub
@@ -234,7 +239,8 @@ No database. The "entities" are files on disk and one config object.
   match, not bit-exact.
 - **A6** — `upscale_realesrgan.py` and `place_composite.py` are used
   unchanged; the `punto` runner stages inputs into the `work/punto-edit/…`
-  paths they hardcode.
+  paths they hardcode and bridges the gap between them (`isnet/up/` →
+  `rvm_up/`). See PLAN Step 7.
 - **A7** — `gh` and web tools are not needed in Phase 1.
 - **A8** — the existing 25 fps compositor clamp in `backdrop.py` is
   irrelevant here: `compose-spec` runs ffmpeg directly, not
