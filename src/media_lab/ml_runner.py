@@ -57,8 +57,12 @@ class MlRunner:
         args: Sequence[str] = (),
         *,
         timeout_s: int = DEFAULT_ML_TIMEOUT_S,
+        cwd: Path | None = None,
     ) -> MlResult:
         """Run `script args...` with the project interpreter.
+
+        `cwd` sets the child's working directory - the punto runner needs it
+        for the legacy pipeline scripts that hardcode `work/...` paths.
 
         Raises MlEnvError if the script is missing, exits non-zero, or times out.
         """
@@ -75,6 +79,7 @@ class MlRunner:
                 text=True,
                 timeout=timeout_s,
                 env=self._environment(),
+                cwd=str(cwd) if cwd is not None else None,
                 check=False,
             )
         except subprocess.TimeoutExpired as exc:

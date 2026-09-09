@@ -19,6 +19,7 @@ from .recipes.cutout import DEVICE_CHOICES, QUALITY_CHOICES, cut_out_person
 from .recipes.filters import LOOKS, apply_look, apply_look_chain
 from .recipes.matte_video import MODEL_CHOICES, matte_video
 from .recipes.proxy_preview import proxy_preview
+from .recipes.punto_v23 import run_punto
 from .recipes.to_short import to_short
 from .verify import ASPECT_RATIOS
 
@@ -96,6 +97,15 @@ def build_parser() -> argparse.ArgumentParser:
     proxy.add_argument("--height", type=int, default=540, help="Proxy height in px")
     proxy.add_argument("--frames", type=int, default=8, help="Frames on the contact sheet")
     proxy.add_argument("--force", action="store_true", help="Overwrite existing previews")
+
+    punto = subcommands.add_parser(
+        "punto", help="Reproduce the punto v23 render through matte/compose/proxy"
+    )
+    punto.add_argument("-o", "--output", required=True, help="Output path")
+    punto.add_argument(
+        "--proxy", action="store_true", help="Fast path: mobilenetv3 matte, skip the upscale"
+    )
+    punto.add_argument("--force", action="store_true", help="Overwrite an existing output")
 
     pipeline = subcommands.add_parser(
         "pipeline", help="Run the whole edit: cutout, backdrop, look, music, vertical export"
@@ -254,6 +264,25 @@ def _run_proxy(args: argparse.Namespace, config: Config, _runner: KinoRunner) ->
     return 0
 
 
+def _run_punto(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    result = run_punto(
+        config, MlRunner.from_config(config), args.output, proxy=args.proxy, force=args.force
+    )
+    mode = "proxy" if result.proxy_mode else "full"
+    print(f"punto ({mode}) written to {result.output}")
+    print(f"  matte {result.matte.model}, stability score {result.matte.stability_score:.2f}")
+    print(
+        f"  composed {result.composed.media.width}x{result.composed.media.height}, "
+        f"{result.composed.media.duration_s:.2f}s"
+    )
+    print(f"  contact sheet {result.preview.sheet}")
+    if result.preview.comparison is not None:
+        print(f"  vs reference   {result.preview.comparison}")
+    if result.proxy_mode:
+        print("  note: --proxy skips the upscale, so the subject is ~half v23 scale")
+    return 0
+
+
 def _run_filter(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
     if args.second_look is None:
         info = apply_look(args.input, args.output, args.look, config, runner, force=args.force)
@@ -334,6 +363,7 @@ HANDLERS = {
     "filter": _run_filter,
     "compose": _run_compose,
     "proxy": _run_proxy,
+    "punto": _run_punto,
     "music": _run_music,
     "short": _run_short,
     "pipeline": _run_pipeline,
