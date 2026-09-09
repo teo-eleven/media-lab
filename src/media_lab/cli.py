@@ -14,9 +14,11 @@ from .paths import clear_work_directory
 from .pipeline import run_pipeline
 from .recipes.audio_bed import add_music_bed
 from .recipes.backdrop import place_on_backdrop
+from .recipes.compose_spec import compose
 from .recipes.cutout import DEVICE_CHOICES, QUALITY_CHOICES, cut_out_person
 from .recipes.filters import LOOKS, apply_look, apply_look_chain
 from .recipes.matte_video import MODEL_CHOICES, matte_video
+from .recipes.proxy_preview import proxy_preview
 from .recipes.to_short import to_short
 from .verify import ASPECT_RATIOS
 
@@ -78,6 +80,22 @@ def build_parser() -> argparse.ArgumentParser:
     short.add_argument("--quality", choices=RESIZE_QUALITY_CHOICES, default="high")
     short.add_argument("--no-thumbnail", dest="thumbnail", action="store_false")
     short.add_argument("--fail-on-warning", action="store_true")
+
+    compose_cmd = subcommands.add_parser(
+        "compose", help="Render a shot from a compose-spec YAML (bg, subject, occlusion, grade)"
+    )
+    compose_cmd.add_argument("spec", help="compose-spec YAML file")
+    compose_cmd.add_argument("-o", "--output", required=True, help="Output path")
+    compose_cmd.add_argument("--force", action="store_true", help="Overwrite an existing output")
+
+    proxy = subcommands.add_parser(
+        "proxy", help="Fast low-res proxy + contact sheet of a render (into work/)"
+    )
+    proxy.add_argument("input", help="Rendered clip to preview")
+    proxy.add_argument("--compare", help="A second file to place side by side")
+    proxy.add_argument("--height", type=int, default=540, help="Proxy height in px")
+    proxy.add_argument("--frames", type=int, default=8, help="Frames on the contact sheet")
+    proxy.add_argument("--force", action="store_true", help="Overwrite existing previews")
 
     pipeline = subcommands.add_parser(
         "pipeline", help="Run the whole edit: cutout, backdrop, look, music, vertical export"
@@ -210,6 +228,32 @@ def _run_backdrop(args: argparse.Namespace, config: Config, runner: KinoRunner) 
     return 0
 
 
+def _run_compose(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    result = compose(args.spec, args.output, config, force=args.force)
+    print(
+        f"composed {args.output} "
+        f"({result.media.width}x{result.media.height}, {result.media.duration_s:.2f}s)"
+    )
+    print(f"  filtergraph kept at {result.filtergraph_path}")
+    return 0
+
+
+def _run_proxy(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    result = proxy_preview(
+        args.input,
+        config,
+        height=args.height,
+        frames=args.frames,
+        compare=args.compare,
+        force=args.force,
+    )
+    print(f"proxy   {result.proxy}")
+    print(f"sheet   {result.sheet}")
+    if result.comparison is not None:
+        print(f"vs      {result.comparison}")
+    return 0
+
+
 def _run_filter(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
     if args.second_look is None:
         info = apply_look(args.input, args.output, args.look, config, runner, force=args.force)
@@ -288,6 +332,8 @@ HANDLERS = {
     "matte": _run_matte,
     "backdrop": _run_backdrop,
     "filter": _run_filter,
+    "compose": _run_compose,
+    "proxy": _run_proxy,
     "music": _run_music,
     "short": _run_short,
     "pipeline": _run_pipeline,
