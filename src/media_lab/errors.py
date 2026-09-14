@@ -62,6 +62,15 @@ class ProbeError(MediaLabError):
     """ffprobe could not read a file, or returned something unusable."""
 
 
+class MlEnvError(MediaLabError):
+    """The ML layer failed: the RVM checkout or weights are missing, or an ML
+    subprocess exited non-zero or timed out."""
+
+
+class SpecError(MediaLabError):
+    """A compose-spec YAML file is missing a field or holds an invalid value."""
+
+
 class VerificationError(MediaLabError):
     """A render completed but does not match what was asked for."""
 

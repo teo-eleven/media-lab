@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from .errors import ConfigError
+from .errors import ConfigError, MlEnvError
 
 DEFAULT_FFMPEG_DIR = "./bin"
 DEFAULT_IN_DIR = "./in"
@@ -19,6 +19,13 @@ DEFAULT_WORK_DIR = "./work"
 DEFAULT_KINO_TIMEOUT_S = 1800
 MIN_KINO_TIMEOUT_S = 1
 REQUIRED_BINARIES = ("ffmpeg", "ffprobe")
+# RVM (Robust Video Matting) is a GPL-3 source checkout, never committed, and
+# its weights are large binary files. Neither is validated at startup - only
+DEFAULT_RVM_REPO = "./tools/RobustVideoMatting"
+DEFAULT_WEIGHTS_DIR = "./work/punto-edit/gen/weights"
+RVM_WEIGHT_FILES = {"resnet50": "rvm_resnet50.pth", "mobilenetv3": "rvm_mobilenetv3.pth"}
+REALESRGAN_WEIGHT_FILES = {2: "RealESRGAN_x2plus.pth", 4: "RealESRGAN_x4plus.pth"}
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +39,8 @@ class Config:
     work_dir: Path
     kino_timeout_s: int
     hyperframes_command: Path | None
+    rvm_repo: Path
+    weights_dir: Path
 
     @property
     def ffmpeg(self) -> Path:
@@ -40,6 +49,11 @@ class Config:
     @property
     def ffprobe(self) -> Path:
         return self.ffmpeg_dir / "ffprobe"
+
+    @property
+    def rvm_ready(self) -> bool:
+        """True when the RVM checkout looks importable and the weights dir exists."""
+        return (self.rvm_repo / "model" / "__init__.py").is_file() and self.weights_dir.is_dir()
 
 
 def read_env_file(path: Path) -> dict[str, str]:
@@ -138,6 +152,12 @@ def load_config(
     if hyperframes is not None and not hyperframes.is_absolute():
         hyperframes = (project_root / hyperframes).resolve()
 
+    # ML paths are resolved but NOT checked here - see require_ml().
+    rvm_repo = _resolve_dir(project_root, merged.get("MEDIA_LAB_RVM_REPO", DEFAULT_RVM_REPO))
+    weights_dir = _resolve_dir(
+        project_root, merged.get("MEDIA_LAB_WEIGHTS_DIR", DEFAULT_WEIGHTS_DIR)
+    )
+
     return Config(
         root=project_root,
         ffmpeg_dir=ffmpeg_dir,
@@ -148,4 +168,59 @@ def load_config(
             merged.get("MEDIA_LAB_KINO_TIMEOUT_S", str(DEFAULT_KINO_TIMEOUT_S))
         ),
         hyperframes_command=hyperframes,
+        rvm_repo=rvm_repo,
+        weights_dir=weights_dir,
     )
+
+
+def require_ml(config: Config, *, model: str | None = None) -> None:
+    """Assert the RVM checkout and weights are in place, or raise MlEnvError.
+
+    Recipes (matte-video) call this; `load_config` deliberately does not, so
+    `doctor` and every non-ML command work on a machine that has never run
+    `scripts/fetch-rvm.sh`. Pass `model` to also require that backend's weight
+    file.
+    """
+    problems: list[str] = []
+    if not (config.rvm_repo / "model" / "__init__.py").is_file():
+        problems.append(f"RVM checkout not found at {config.rvm_repo}")
+    if not config.weights_dir.is_dir():
+        problems.append(f"weights directory not found at {config.weights_dir}")
+    elif model is not None:
+        if model not in RVM_WEIGHT_FILES:
+            allowed = sorted(RVM_WEIGHT_FILES)
+            raise MlEnvError(f"unknown RVM model {model!r}; expected one of {allowed}")
+        weight = config.weights_dir / RVM_WEIGHT_FILES[model]
+        if not weight.is_file():
+            problems.append(f"missing weight file {weight}")
+
+    if problems:
+        listed = "\n".join(f"  - {p}" for p in problems)
+        raise MlEnvError(
+            "RVM is not set up:\n"
+            f"{listed}\n"
+            "Run ./scripts/fetch-rvm.sh, then download the weights it prints."
+        )
+
+
+def require_realesrgan(config: Config, *, scale: int = 2) -> Path:
+    """Assert Real-ESRGAN weight file exists, or raise MlEnvError.
+
+    Returns the resolved path to the model weights file.
+    """
+    if scale not in REALESRGAN_WEIGHT_FILES:
+        allowed = sorted(REALESRGAN_WEIGHT_FILES)
+        raise MlEnvError(f"unsupported upscale scale {scale}; expected one of {allowed}")
+    if not config.weights_dir.is_dir():
+        raise MlEnvError(
+            f"weights directory not found at {config.weights_dir}.\n"
+            "Create it and download the Real-ESRGAN weights."
+        )
+    weight_file = config.weights_dir / REALESRGAN_WEIGHT_FILES[scale]
+    if not weight_file.is_file():
+        raise MlEnvError(
+            f"Real-ESRGAN weight file not found at {weight_file}.\n"
+            f"Expected {REALESRGAN_WEIGHT_FILES[scale]} under {config.weights_dir}."
+        )
+    return weight_file
+

@@ -20,6 +20,12 @@ def test_doctor_reports_the_environment(
     printed = capsys.readouterr().out
     assert "media-lab environment" in printed
     assert "kino doctor" in printed
+    assert "rvm repo" in printed
+    assert "weights" in printed
+    # every ML line is marked configured or not - never left blank
+    for line in printed.splitlines():
+        if line.strip().startswith(("rvm repo", "weights")):
+            assert "(ok)" in line or "(not configured)" in line
 
 
 def test_reports_configuration_failures_without_a_traceback(

@@ -5,6 +5,199 @@ Newest first.
 
 ---
 
+## 2026-09-14 — Phase 2: modular upscale, Reinhard colour-match, foot-pinning grounding replace legacy scripts
+
+**Context.** Phase 1 staged frames around `docs/video-agent/pipeline/upscale_realesrgan.py`
+and `place_composite.py` via ad-hoc directory moves (`isnet/up/` -> `rvm_up/`). The scripts
+had hardcoded paths and rigid configurations.
+
+**Chosen.** Folded all logic into four typed, modular, tested tools:
+1. `recipes/upscale.py` + `ml/realesrgan_infer.py`: Real-ESRGAN running as a subprocess
+   via `ml_runner`, alpha upscaled with Lanczos, supporting arbitrary directories and video files.
+2. `colour_transfer.py` + `recipes/colour_match.py`: Reinhard statistical colour transfer in
+   decorrelated Lab space + scene directional lighting and ground bounce.
+3. `grounding.py` + `recipes/subject_ground.py`: Foot contact point detection, silhouette base
+   locking (foot-pinning), zoom normalisation, and 3-layer directional contact shadow rendering.
+4. `scale_plate.py` + `recipes/scale_plate.py`: Analytical scale and ground line estimation from
+   background plate reference persons.
+
+The `punto` runner now calls these native recipes directly, eliminating all directory-move hacks.
+
+**Trade-off accepted.** More source files to maintain, but zero hardcoded workspace paths,
+fully isolated ML boundaries, full unit test coverage, and reusable CLI tools.
+
+---
+
+## 2026-09-09 — compose-spec renders in one fused ffmpeg pass
+
+**Context.** The v23 `compose_pipeline.sh` was three ffmpeg invocations with
+two ProRes 422 intermediates (~720 MB each): background prep, composite +
+occlusion, grade + encode. Spike S1 reproduced each stage from parameters.
+
+**Chosen.** `compose_spec.build_filtergraph` emits a single `-filter_complex`
+graph that does all three: `[0:v]fps,scale,split` -> feathered occlusion strip
+via `geq` -> overlay the pre-placed subject at 0:0 -> re-overlay the strip ->
+the v23 grade chain -> encode. One `ffmpeg` call, no intermediates.
+
+**Trade-off accepted.** The graph string is long (~700 chars) and a failure in
+it is harder to bisect than a failed stage. In exchange: no 1.4 GB of ProRes
+per run, one pass instead of three, and — measured against the real v23
+render — `mean|Δ| 2.3/255` (better than the 3-stage spike's 2.6, because the
+ProRes round-trips are gone). Bit-exact is impossible anyway: `noise=allf=t`
+reseeds per run.
+
+---
+
+## 2026-09-09 — the punto runner stages frames around the unchanged v23 scripts
+
+**Context.** Phase 1 keeps `upscale_realesrgan.py` and `place_composite.py`
+verbatim (they are a captured record). But their hardcoded I/O dirs do not
+chain: matte writes `rvm/`, upscale reads `isnet/cut/` and writes `isnet/up/`,
+place reads `rvm_up/` (or falls back to `isnet/cut/`). The v23 run only worked
+via manual renames recorded nowhere (audit finding M2).
+
+**Chosen.** `recipes/punto_v23.py` stages between them: matte frames ->
+`isnet/cut/`; after upscale, **move** `isnet/up/` -> `rvm_up/` so `place`
+picks the upscaled frames. `ml_runner.run` gained a `cwd` argument so the
+scripts run from the repo root where their relative paths resolve. `--proxy`
+skips the upscale and the move, so `place` composites the 720p frames and the
+subject is ~half v23 scale — the CLI says so.
+
+**Trade-off accepted.** The runner encodes knowledge of two scripts' internal
+paths, so editing those scripts can break it silently. This is the documented
+Phase-2 cleanup point (fold them into real `upscale` / `subject-ground`
+tools). Until then the alternative — a one-line env-var patch to each script —
+was rejected to keep them a faithful v23 record.
+
+---
+
+## 2026-09-09 — video-agent Phase 1: recipes + CLI, not skills or subagents
+
+**Context.** The `docs/video-agent/ROADMAP.md` lists `compose-spec`,
+`proxy-preview` and `matte-video` in a "Tools / skills" table and a separate
+"Subagents" table. They could be standalone skills (like `verify-render`),
+Claude Code subagents, or Python recipes in this package.
+
+**Chosen.** Python recipes in `src/media_lab/recipes/` plus `media-lab`
+subcommands, extending the existing package on `feat/video-agent-toolkit`.
+
+**Trade-off accepted.** They are not invokable from outside a `media-lab`
+checkout until a later phase wraps them. In exchange they reuse `config`,
+`paths`, `verify`, `ffmpeg` and the test harness unchanged — one codebase, one
+error model, one non-destructive contract — instead of re-implementing that
+infrastructure per skill. A thin skill/agent wrapper is a Phase 4 concern.
+
+---
+
+## 2026-09-09 — Run RVM in a child process, reusing the project venv
+
+**Context.** `matte-video` wraps Robust Video Matting. RVM is **GPL-3.0** and is
+used as a source checkout (`from model import MattingNetwork`), not a package —
+`import`ing it into `media_lab`'s own process would make our process a
+derivative work. RVM needs `torch` + `torchvision`; an audit on 2026-09-09
+found the project `.venv` **already carries both** (plus `basicsr` and
+`realesrgan`) because `kinocut[upscale]` declares `torch>=2.0` — they are in
+`uv.lock`. An earlier draft of this entry assumed the opposite and proposed a
+second venv; that rationale was wrong.
+
+**Chosen.** Clone RVM to `tools/RobustVideoMatting/` (git-ignored, never
+committed — GPL). Invoke it through a new `ml_runner.py` module — the single
+sanctioned exit for ML subprocesses, as `kino.py` is for kinocut and
+`ffmpeg.py` for direct ffmpeg. `ml_runner` runs a driver script
+(`src/media_lab/ml/rvm_infer.py`) as a **child process using the project
+interpreter** (`sys.executable`); the driver puts the RVM clone on `sys.path`,
+imports it there, and writes an RGBA PNG sequence + a JSON stats file. No
+separate venv.
+
+**Trade-off accepted.** One extra process boundary and a git-ignored source
+checkout to recreate (alongside `bin/`). Data crosses as files, not tensors.
+In exchange: GPL code is never imported into our process and never enters the
+repo; `torch` (a ~1 s import) stays out of the main CLI process unless matting
+is actually run; a torch/RVM break is contained to one module. Cost of the
+correction: `ml_runner.py` is thinner than a full venv-switching runner, but
+kept for the process boundary and the timeout/stderr/typed-error wrapper.
+
+---
+
+## 2026-09-09 — ML paths are lazily-validated config, not startup-validated
+
+**Context.** `config.py` validates everything at startup so the project fails
+loudly rather than mid-render. The new `rvm_repo` / `weights_dir` paths only
+matter to `matte-video`.
+
+**Chosen.** Add them to `Config` with project-root-relative defaults, but check
+them in a `require_ml(config)` helper the recipe calls — not in `load_config`.
+`doctor` reports ML state as `(ok)` / `(not configured)` without failing.
+
+**Trade-off accepted.** A second validation style in the codebase (startup for
+core, lazy for ML). In exchange, `doctor`, `cutout`, `backdrop`, `filter`,
+`music`, `short` and `pipeline` all keep working on a machine that has never
+installed torch.
+
+---
+
+## 2026-09-09 — matte-video writes ProRes 4444 .mov
+
+**Context.** `pipeline/matte_rvm.py` writes a PNG sequence; `place_composite.py`
+consumes a directory of PNGs. But the project's verification layer
+(`verify_render`, `measure_alpha_spread`) is built around a single file with a
+readable alpha channel, and `cutout.py` already established ProRes 4444 `.mov`
+as the alpha-carrying interchange format.
+
+**Chosen.** `matte-video` writes frames internally, then muxes a ProRes 4444
+`.mov` as its deliverable. The PNG working directory is kept as an
+intermediate.
+
+**Trade-off accepted.** A mux step and a large file (ProRes is ~214 MB / 6.4 s).
+In exchange, one artefact to verify with the existing tooling, consistent with
+`cutout`.
+
+---
+
+## 2026-09-09 — compose-spec: YAML in, filtergraph emitted and run, subject pre-placed
+
+**Context.** `compose-spec` replaces the hand-edited `compose_pipeline.sh`.
+Open questions: spec format; whether it also positions the subject; how the
+grade chain is exposed.
+
+**Chosen.** A YAML spec (comments, readability). `compose-spec` writes the
+`-filter_complex` string to a `.filtergraph.txt` sidecar **and** runs it. It
+overlays a **pre-placed, full-canvas** RGBA subject sequence at `0:0` — it
+never scales or moves the subject (that stays in `place_composite.py` / a
+Phase-2 `subject-ground` tool). The grade is a fixed `v23` profile
+(constants lifted from the v23 script) toggled on/off with a few scalar knobs
+(atmosphere opacity, grain, vignette). The depth-occlusion strip is
+parametrised (height, feather, y).
+
+**Trade-off accepted.** The spec cannot express a camera move or a custom
+grade without a code change. In exchange, the person writing a spec cannot
+hit the `zsh` word-split or `fade` white-out pitfalls, and the grade stays a
+named look rather than raw ffmpeg values — the same philosophy as
+`recipes/filters.py`. Matches how v23 actually rendered (`overlay=0:0` on
+full-canvas placed frames).
+
+---
+
+## 2026-09-09 — Phase 1 acceptance is the punto clip, checked to container spec
+
+**Context.** "Phase 1 done" needed a concrete bar. Options ranged from
+"synthetic tests only" to "bit-exact reproduction of v23".
+
+**Chosen.** Both: each tool carries its own suite (happy + ≥2 edge + 1 error,
+coverage ≥ 80%, ML mocked by default with one opt-in real-RVM test), **and** a
+`media-lab punto` runner reproduces the v23 render through the three new tools.
+The reproduction is judged a pass on container spec (2160×3840, 30 fps,
+~6.43 s, no audio, H.264 High, yuv420p — via `verify-render`) plus a visual
+contact-sheet match against
+`out/punto-final_2160x3840_30fps_h264-crf17.mp4`. Not bit-exact.
+
+**Trade-off accepted.** The visual half of the check is a human judgement, not
+an assertion, so it cannot gate CI (there is no CI — single-user, local). In
+exchange, the acceptance actually proves the three tools replace the v23
+pipeline, which "synthetic tests only" would not.
+
+---
+
 ## 2026-09-03 — Wrap Kinocut rather than write our own ffmpeg layer
 
 **Context.** The goal was a local editor for short social clips: person

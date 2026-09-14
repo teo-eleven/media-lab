@@ -6,7 +6,11 @@ placed into new locations). No media lives here — only the code, the recipe, a
 the lessons. Media stays in the (gitignored) `in/ out/ work/` dirs.
 
 Runs on: macOS Apple Silicon (MPS), **no CUDA**. `ffmpeg` 9.0 static in `../../bin/`.
-Python: a 3.12 venv (`.venv`, project) and throwaway venvs for the ML bits.
+Python: the project 3.12 `.venv`. It already carries `torch` / `torchvision` /
+`basicsr` / `realesrgan` (via `kinocut[upscale]`), so RVM matting and
+Real-ESRGAN run there. Only two things need a separate venv: rembg/isnet
+(`.matte-venv`, Phase 2) and IC-Light (`.gen-venv`, GPU box only — does not run
+here).
 
 ---
 
@@ -29,8 +33,22 @@ compose_pipeline.sh
   └─ encode: libx264 High, crf 17-18, +faststart, 30fps native
 ```
 
-Every stage is a small standalone script. `compose_pipeline.sh` is the glue; edit the
-variables at the top (bg clip, offsets, occlusion strip Y) per shot.
+Every stage was originally a small standalone script in `pipeline/`. Those scripts are kept as historical/reference records, but are now superseded by native recipes.
+
+**Phase 1 & Phase 2 replace the entire chain with typed `media-lab` commands** (see `PLAN.md`):
+
+```sh
+media-lab matte        in/punto-source.mp4 -o work/m.mov                # matte_rvm.py productised
+media-lab upscale      work/m.mov -o work/m-up.mov --scale 2            # upscale_realesrgan.py productised
+media-lab scale-plate  work/m-up.mov --ref-height 480 --ref-ground 3560 # plate scale estimation
+media-lab colour-match work/m-up.mov -o work/relit.mov --bg in/bg.mp4   # Reinhard Lab + directional relight
+media-lab ground       work/relit.mov -o work/placed.mov --ground-y 3560# place_composite.py productised
+media-lab compose      docs/video-agent/punto-v23.yaml -o out/x.mp4     # compose_pipeline.sh productised
+media-lab proxy        out/x.mp4 --compare out/prev.mp4                 # fast preview + contact sheet
+media-lab punto        -o out/punto.mp4 [--proxy]                       # the whole chain, one command
+```
+
+`matte` and `punto` need `./scripts/fetch-rvm.sh` first; `upscale` requires Real-ESRGAN weights.
 
 ---
 
@@ -81,16 +99,21 @@ variables at the top (bg clip, offsets, occlusion strip Y) per shot.
 
 ---
 
-## Install (throwaway venvs)
+## Install
 
 ```sh
-# matting + upscale
-python3 -m venv .rvm-venv && .rvm-venv/bin/pip install torch torchvision pillow numpy
-#   + clone github.com/PeterL1n/RobustVideoMatting, weights from its releases
-python3 -m venv .matte-venv && .matte-venv/bin/pip install "rembg[cpu]" pillow onnxruntime scipy
-.venv/bin/pip install realesrgan basicsr   # + the functional_tensor shim
+# torch / torchvision / basicsr / realesrgan + the functional_tensor shim
+# come from `make setup` (kinocut[upscale] + scripts/patch-basicsr-shim.sh).
 
-# generative (kept for a GPU box; does not run on MPS in usable time)
+# RVM matting: a source checkout on sys.path (GPL-3, never committed) + weights
+git clone https://github.com/PeterL1n/RobustVideoMatting tools/RobustVideoMatting
+#   weights: rvm_resnet50.pth / rvm_mobilenetv3.pth from that repo's releases,
+#   into work/punto-edit/gen/weights/ (or MEDIA_LAB_WEIGHTS_DIR)
+
+# Phase 2 only — rembg / isnet fallback (its own py3.9 venv):
+python3 -m venv .matte-venv && .matte-venv/bin/pip install "rembg[cpu]" pillow onnxruntime scipy
+
+# Out of scope — IC-Light generative relight (GPU box only, does not run here):
 python3 -m venv .gen-venv && .gen-venv/bin/pip install torch torchvision diffusers transformers accelerate safetensors
 ```
 

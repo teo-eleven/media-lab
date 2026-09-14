@@ -1,4 +1,8 @@
 #!/bin/bash
+# Captured v23 compose run, kept as a record. NOT a clean-checkout script:
+# it assumes the v23 `work/punto-edit/` layout (matte + upscaled + placed
+# frames already present) and a specific background. compose-spec (Phase 1)
+# replaces this. Paths are relative to the repo root.
 set -euo pipefail
 cd ~/dev/media-lab
 export PATH="$PWD/bin:$PATH"
@@ -13,7 +17,8 @@ ffprobe -v error -select_streams v:0 -count_frames -show_entries stream=nb_read_
 
 echo "### placement: RVM matte (upscaled), hard foot-pin, subtle shadow"
 rm -rf work/punto-edit/isnet/placed && mkdir -p work/punto-edit/isnet/placed
-work/punto-edit/.matte-venv/bin/python work/punto-edit/isnet/place2.py
+# place2.py used in the v23 run is byte-identical to the tracked script below.
+.venv/bin/python docs/video-agent/pipeline/place_composite.py
 ffmpeg -y -hide_banner -loglevel error -framerate 30 -i work/punto-edit/isnet/placed/f-%04d.png -c:v prores_ks -profile:v 4 -pix_fmt yuva444p10le $D/subj-placed.mov
 
 echo "### composite (native 30fps, no interp, no camera move)"

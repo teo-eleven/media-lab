@@ -1,0 +1,30 @@
+# compose-spec for the punto v23 reproduction.
+# `media-lab punto` emits an identical file at work/punto-v23.yaml at run time;
+# this copy is the checked-in reference. Paths are relative to the repo root.
+
+background:
+  path: in/backgrounds/nyc-wallst.mp4
+  width: 2160
+  height: 3840
+  fps: 30
+  frames: 193
+  start_s: 1.0
+
+subject:
+  # full-canvas RGBA frames from place_composite.py (foot-pin + relight + shadow)
+  frames: work/punto-edit/isnet/placed/f-%04d.png
+  fps: 30
+
+occlusion:
+  # re-overlay the bottom strip of the background on top of the subject so the
+  # nearest crowd passes in front of her
+  height: 130
+  feather: 70
+  y: 3710
+
+grade:
+  profile: v23 # eq + colorbalance + curves + atmosphere + grain + vignette
+
+output:
+  crf: 18
+  preset: medium

@@ -12,19 +12,31 @@ probed and checked against what was asked for.
 
 ## What it does
 
-| Command              | What it does                                                        |
-| -------------------- | ------------------------------------------------------------------- |
-| `media-lab doctor`   | Report the resolved environment and run kinocut's own checks        |
-| `media-lab cutout`   | Cut a person out of a still or video, keeping alpha                 |
-| `media-lab backdrop` | Composite a cutout onto a new image or video backdrop               |
-| `media-lab filter`   | Apply one of ten named looks, or chain two                          |
-| `media-lab music`    | Mix a music bed under the voice with sidechain ducking              |
-| `media-lab short`    | Reframe to 9:16 (or another ratio), export, quality-gate, thumbnail |
-| `media-lab pipeline` | Run the whole edit in one pass                                      |
-| `media-lab clean`    | Empty `work/` (add `--dry-run` to preview first)                    |
+| Command              | What it does                                                           |
+| -------------------- | ---------------------------------------------------------------------- |
+| `media-lab doctor`   | Report the resolved environment and run kinocut's own checks           |
+| `media-lab cutout`   | Cut a person out of a still or video, keeping alpha                    |
+| `media-lab matte`    | Matte a person out of a video with RVM (ProRes 4444 + flicker score)   |
+| `media-lab backdrop` | Composite a cutout onto a new image or video backdrop                  |
+| `media-lab upscale`      | Upscale video or PNG sequence with Real-ESRGAN (x2/x4, alpha-aware)    |
+| `media-lab ground`       | Place cutout on canvas with foot-pinning and 3-layer contact shadow    |
+| `media-lab scale-plate`  | Calculate scale factor and ground line from plate reference person    |
+| `media-lab colour-match` | Transfer colour mood (Reinhard Lab) and apply directional relighting   |
+| `media-lab compose`      | Render a shot from a compose-spec YAML (bg, subject, occlusion, grade) |
+| `media-lab filter`       | Apply one of ten named looks, or chain two                             |
+| `media-lab proxy`        | Fast low-res proxy + contact sheet of a render, optional side-by-side  |
+| `media-lab music`        | Mix a music bed under the voice with sidechain ducking                 |
+| `media-lab short`        | Reframe to 9:16 (or another ratio), export, quality-gate, thumbnail    |
+| `media-lab pipeline`     | Run the whole edit in one pass                                         |
+| `media-lab punto`        | Reproduce the punto v23 render through matte/compose/proxy             |
+| `media-lab clean`        | Empty `work/` (add `--dry-run` to preview first)                       |
 
 Available looks: `warm`, `cool`, `vintage`, `cinematic`, `noir`, `vignette`,
 `glow`, `grain`, `vibrant`, `punchy`.
+
+`matte` and `punto` need the RVM checkout: `./scripts/fetch-rvm.sh` clones it to
+`tools/` and downloads the weights. See `docs/video-agent/` for the toolkit's
+design (`SPEC.md`, `PLAN.md`) and the compose-spec format (`punto-v23.yaml`).
 
 ## Requirements
 
@@ -43,13 +55,14 @@ Pinned: `kinocut==1.15.1`, `hyperframes@0.8.27`, static `ffmpeg`/`ffprobe` 9.0
 ```sh
 cd media-lab
 ./scripts/fetch-ffmpeg.sh   # static ffmpeg + ffprobe into ./bin
-make setup                  # uv sync + npm install
+make setup                  # uv sync + npm install + basicsr shim
 cp .env.example .env
 make doctor                 # verify the environment
 ```
 
 `bin/`, `.venv/` and `node_modules/` are gitignored; those three commands
-recreate them from pinned versions.
+recreate them from pinned versions. `make setup` also runs
+`scripts/patch-basicsr-shim.sh` (see Known limitations).
 
 ## Use it
 
@@ -69,6 +82,15 @@ uv run media-lab backdrop out/cutout.webm --bg in/bg.png -o out/composed.mp4
 uv run media-lab filter   out/composed.mp4 --look warm --then grain -o out/graded.mp4
 uv run media-lab music    out/graded.mp4 --track in/song.mp3 -o out/mixed.mp4
 uv run media-lab short    out/mixed.mp4 -o out/final.mp4
+
+# video-agent compositing workflow (Phase 1 & Phase 2)
+uv run media-lab matte    in/clip.mp4 -o work/matte.mov
+uv run media-lab upscale  work/matte.mov -o work/matte-up.mov --scale 2
+uv run media-lab scale-plate work/matte-up.mov --ref-height 480 --ref-ground 3560
+uv run media-lab colour-match work/matte-up.mov -o work/relit.mov --bg in/bg.mp4
+uv run media-lab ground   work/relit.mov -o work/placed.mov --ground-y 3560
+uv run media-lab compose  work/shot.yaml -o out/final.mp4
+uv run media-lab proxy    out/final.mp4 --compare out/prev.mp4
 ```
 
 The pipeline runs: cutout, backdrop, look, restore the voice the compositor
@@ -86,6 +108,7 @@ quality gate into a non-zero exit instead of a printed warning.
 
 ```
 bin/       static ffmpeg + ffprobe (gitignored, see scripts/fetch-ffmpeg.sh)
+tools/     third-party checkouts, e.g. RVM (gitignored, see scripts/fetch-rvm.sh)
 in/        source media - READ ONLY, never modified (gitignored)
 out/       renders (gitignored)
 work/      pipeline intermediates, kept for inspection (gitignored)
@@ -138,6 +161,13 @@ The suite performs real renders, so it takes a few minutes.
 - **Cutout speed** is roughly 125 ms per frame on an M2, so a 30-second clip
   at 30 fps takes about two minutes.
 - `video-body-swap` exists in kinocut but is deliberately not exposed here.
+- **`basicsr` needs a torchvision shim.** `kinocut[upscale]` pulls `basicsr`,
+  which imports `torchvision.transforms.functional_tensor` - removed in
+  torchvision 0.17. Without it, `import basicsr` / `realesrgan` and any
+  `kino *upscale*` call fail at import. `make setup` runs
+  `scripts/patch-basicsr-shim.sh`, which writes a re-export module into the
+  venv; the file is under the gitignored `.venv`, so the script makes the
+  patch reproducible. It is idempotent and safe to re-run.
 
 ## Environment variables
 

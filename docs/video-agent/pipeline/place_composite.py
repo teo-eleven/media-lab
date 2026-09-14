@@ -2,7 +2,8 @@
 per-scene relight grade: directional key/fill gradient, ambient colour, ground
 bounce on the lower body, and a sun-direction contact shadow.
 
-in : work/punto-edit/isnet/up/f-*.png   (or isnet/cut if up/ missing)
+in : work/punto-edit/rvm_up/f-*.png  (upscaled cutout; falls back to
+     work/punto-edit/isnet/cut/f-*.png when rvm_up/ is absent or has <=100 files)
 out: work/punto-edit/isnet/placed/f-*.png  (2160x3840 RGBA, ready to overlay on bg)
 """
 import glob
@@ -87,7 +88,6 @@ def relight(rgba, s):
     arr = np.asarray(rgba).astype(np.float32)
     h, w = arr.shape[:2]
     rgb = arr[..., :3]
-    al = arr[..., 3:4] / 255.0
 
     # ambient colour + brightness + gamma
     for c in range(3):

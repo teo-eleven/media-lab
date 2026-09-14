@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -110,3 +111,29 @@ def measure_alpha_spread(path: Path, config: Config) -> int:
     if not minimums or not maximums:
         raise FFmpegError(("alphaextract",), 0, f"no alpha statistics reported for {path}")
     return max(maximums) - min(minimums)
+
+
+def run_filtergraph(
+    inputs: Sequence[tuple[Sequence[str], str]],
+    filter_complex: str,
+    map_target: str,
+    encode_args: Sequence[str],
+    output: Path,
+    config: Config,
+    *,
+    frames: int | None = None,
+    timeout_s: int = DEFAULT_FFMPEG_TIMEOUT_S,
+) -> FFmpegResult:
+    """Run one `-filter_complex` graph. `inputs` is a list of (lead_args, path).
+
+    The recipe layer builds the graph string and the encode args; this only
+    assembles the command and hands it to run_ffmpeg.
+    """
+    args: list[str] = []
+    for lead_args, path in inputs:
+        args += [*lead_args, "-i", path]
+    args += ["-filter_complex", filter_complex, "-map", map_target]
+    if frames is not None:
+        args += ["-frames:v", str(frames)]
+    args += [*encode_args, str(output)]
+    return run_ffmpeg(args, config, timeout_s=timeout_s)

@@ -6,16 +6,26 @@ import argparse
 import sys
 from collections.abc import Sequence
 
+from .colour_transfer import RelightParams
 from .config import Config, load_config
 from .errors import MediaLabError
 from .kino import KinoRunner
+from .ml_runner import MlRunner
 from .paths import clear_work_directory
 from .pipeline import run_pipeline
 from .recipes.audio_bed import add_music_bed
 from .recipes.backdrop import place_on_backdrop
+from .recipes.colour_match import colour_match
+from .recipes.compose_spec import compose
 from .recipes.cutout import DEVICE_CHOICES, QUALITY_CHOICES, cut_out_person
 from .recipes.filters import LOOKS, apply_look, apply_look_chain
+from .recipes.matte_video import MODEL_CHOICES, matte_video
+from .recipes.proxy_preview import proxy_preview
+from .recipes.punto_v23 import run_punto
+from .recipes.scale_plate import estimate_plate_scale
+from .recipes.subject_ground import ground_subject
 from .recipes.to_short import to_short
+from .recipes.upscale import upscale
 from .verify import ASPECT_RATIOS
 
 RESIZE_QUALITY_CHOICES = ("low", "medium", "high", "ultra")
@@ -46,6 +56,72 @@ def build_parser() -> argparse.ArgumentParser:
     cutout.add_argument("--quality", choices=QUALITY_CHOICES, default="balanced")
     cutout.add_argument("--device", choices=DEVICE_CHOICES, default="auto")
 
+    matte = subcommands.add_parser("matte", help="Matte a person out of a video with RVM")
+    _add_io_arguments(matte)
+    matte.add_argument("--model", choices=MODEL_CHOICES, default="resnet50")
+
+    upscale_cmd = subcommands.add_parser(
+        "upscale", help="Upscale a video or PNG frame sequence with Real-ESRGAN"
+    )
+    _add_io_arguments(upscale_cmd)
+    upscale_cmd.add_argument("--scale", type=int, choices=[2, 4], default=2, help="Upscale factor")
+    upscale_cmd.add_argument("--tile", type=int, default=512, help="Tile size (0 for no tiling)")
+    upscale_cmd.add_argument("--fps", type=float, help="Override framerate")
+
+    ground_cmd = subcommands.add_parser(
+        "ground",
+        help="Ground and position subject onto canvas with foot-locking and shadow",
+    )
+    _add_io_arguments(ground_cmd)
+    ground_cmd.add_argument("--canvas-width", type=int, default=2160, help="Canvas width")
+    ground_cmd.add_argument("--canvas-height", type=int, default=3840, help="Canvas height")
+    ground_cmd.add_argument("--ground-y", type=int, default=3560, help="Ground contact line Y")
+    ground_cmd.add_argument("--dx", type=int, default=0, help="Horizontal offset from center")
+    ground_cmd.add_argument("--scale", type=float, default=1.0, help="Base subject scale")
+    ground_cmd.add_argument(
+        "--no-shadow", dest="enable_shadow", action="store_false", help="Disable contact shadow"
+    )
+    ground_cmd.add_argument(
+        "--shadow-opacity", type=float, default=1.0, help="Shadow opacity (0-1)"
+    )
+    ground_cmd.add_argument(
+        "--no-zoom-norm",
+        dest="zoom_normalise",
+        action="store_false",
+        help="Disable zoom normalisation",
+    )
+    ground_cmd.add_argument("--fps", type=float, help="Framerate override")
+
+    scale_cmd = subcommands.add_parser(
+        "scale-plate",
+        help="Estimate scale and ground line for subject from background plate reference",
+    )
+    scale_cmd.add_argument("input", help="Cutout image or directory of cutout frames")
+    scale_cmd.add_argument(
+        "--ref-height", type=int, required=True, help="Reference person height in px"
+    )
+    scale_cmd.add_argument(
+        "--ref-ground", type=int, required=True, help="Reference ground contact line Y in px"
+    )
+    scale_cmd.add_argument(
+        "--ratio", type=float, default=1.0, help="Real-world height ratio (subject / ref)"
+    )
+
+    colour_cmd = subcommands.add_parser(
+        "colour-match",
+        help="Transfer background colour mood and apply scene relighting to subject",
+    )
+    _add_io_arguments(colour_cmd)
+    colour_cmd.add_argument("--bg", help="Reference background image or plate")
+    colour_cmd.add_argument(
+        "--strength", type=float, default=1.0, help="Colour transfer strength (0-1)"
+    )
+    colour_cmd.add_argument("--bright", type=float, default=1.0, help="Brightness multiplier")
+    colour_cmd.add_argument("--gamma", type=float, default=1.0, help="Gamma exponent")
+    colour_cmd.add_argument("--sat", type=float, default=1.0, help="Saturation multiplier")
+    colour_cmd.add_argument("--contrast", type=float, default=1.0, help="Contrast multiplier")
+    colour_cmd.add_argument("--fps", type=float, help="Framerate override")
+
     backdrop = subcommands.add_parser("backdrop", help="Composite a cutout onto a backdrop")
     _add_io_arguments(backdrop)
     backdrop.add_argument("--bg", required=True, help="Backdrop image or video")
@@ -72,6 +148,31 @@ def build_parser() -> argparse.ArgumentParser:
     short.add_argument("--quality", choices=RESIZE_QUALITY_CHOICES, default="high")
     short.add_argument("--no-thumbnail", dest="thumbnail", action="store_false")
     short.add_argument("--fail-on-warning", action="store_true")
+
+    compose_cmd = subcommands.add_parser(
+        "compose", help="Render a shot from a compose-spec YAML (bg, subject, occlusion, grade)"
+    )
+    compose_cmd.add_argument("spec", help="compose-spec YAML file")
+    compose_cmd.add_argument("-o", "--output", required=True, help="Output path")
+    compose_cmd.add_argument("--force", action="store_true", help="Overwrite an existing output")
+
+    proxy = subcommands.add_parser(
+        "proxy", help="Fast low-res proxy + contact sheet of a render (into work/)"
+    )
+    proxy.add_argument("input", help="Rendered clip to preview")
+    proxy.add_argument("--compare", help="A second file to place side by side")
+    proxy.add_argument("--height", type=int, default=540, help="Proxy height in px")
+    proxy.add_argument("--frames", type=int, default=8, help="Frames on the contact sheet")
+    proxy.add_argument("--force", action="store_true", help="Overwrite existing previews")
+
+    punto = subcommands.add_parser(
+        "punto", help="Reproduce the punto v23 render through matte/compose/proxy"
+    )
+    punto.add_argument("-o", "--output", required=True, help="Output path")
+    punto.add_argument(
+        "--proxy", action="store_true", help="Fast path: mobilenetv3 matte, skip the upscale"
+    )
+    punto.add_argument("--force", action="store_true", help="Overwrite an existing output")
 
     pipeline = subcommands.add_parser(
         "pipeline", help="Run the whole edit: cutout, backdrop, look, music, vertical export"
@@ -128,6 +229,10 @@ def _report_doctor(config: Config, runner: KinoRunner) -> int:
     print(f"  kino            {runner.executable}")
     print(f"  kino timeout    {config.kino_timeout_s}s")
     print(f"  hyperframes     {config.hyperframes_command or '(not configured)'}")
+    repo_ok = (config.rvm_repo / "model" / "__init__.py").is_file()
+    weights_ok = config.weights_dir.is_dir()
+    print(f"  rvm repo        {config.rvm_repo} {'(ok)' if repo_ok else '(not configured)'}")
+    print(f"  weights         {config.weights_dir} {'(ok)' if weights_ok else '(not configured)'}")
     print()
     print("kino doctor")
     print(runner.run(["doctor"]).stdout.rstrip())
@@ -149,6 +254,106 @@ def _run_cutout(args: argparse.Namespace, config: Config, runner: KinoRunner) ->
     print(f"  {result.frames_processed} frames at {result.ms_per_frame:.0f} ms/frame")
     print(f"  alpha spread {result.alpha_spread}/255 (0 would mean nothing was cut)")
     return 0
+
+
+def _run_matte(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    result = matte_video(
+        args.input,
+        args.output,
+        config,
+        MlRunner.from_config(config),
+        model=args.model,
+        force=args.force,
+    )
+    print(f"matte written to {args.output}")
+    print(f"  model {result.model}, {result.frames} frames")
+    print(f"  alpha spread {result.alpha_spread}/255 (0 would mean nothing was separated)")
+    print(f"  stability score {result.stability_score:.2f} (lower = less flicker)")
+    return 0
+
+
+def _run_upscale(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    result = upscale(
+        args.input,
+        args.output,
+        config,
+        MlRunner.from_config(config),
+        scale=args.scale,
+        tile=args.tile,
+        fps=args.fps,
+        force=args.force,
+    )
+    print(f"upscale written to {result.output}")
+    print(f"  scale {result.scale}x, {result.frames} frames")
+    return 0
+
+
+def _run_ground(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    result = ground_subject(
+        args.input,
+        args.output,
+        config,
+        canvas=(args.canvas_width, args.canvas_height),
+        ground_y=args.ground_y,
+        dx=args.dx,
+        base_scale=args.scale,
+        enable_shadow=args.enable_shadow,
+        shadow_opacity=args.shadow_opacity,
+        zoom_normalise=args.zoom_normalise,
+        fps=args.fps,
+        force=args.force,
+    )
+    print(f"grounded subject written to {result.output}")
+    print(
+        f"  canvas {result.canvas[0]}x{result.canvas[1]}, "
+        f"ground Y {result.ground_y}, {result.frames} frames"
+    )
+    return 0
+
+
+def _run_scale_plate(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    result = estimate_plate_scale(
+        args.input,
+        config,
+        ref_height=args.ref_height,
+        ref_ground_y=args.ref_ground,
+        height_ratio=args.ratio,
+    )
+    print(f"scale estimate for {args.input}:")
+    print(f"  measured subject height: {result.subject_height_px}px")
+    print(f"  target height:           {result.target_height_px}px")
+    print(f"  recommended scale:       {result.base_scale:.4f}")
+    print(f"  recommended ground-y:    {result.ground_y}")
+    print(
+        f"  hint: pass --scale {result.base_scale:.4f} "
+        f"--ground-y {result.ground_y} to media-lab ground"
+    )
+    return 0
+
+
+def _run_colour_match(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    params = RelightParams(
+        bright=args.bright,
+        gamma=args.gamma,
+        sat=args.sat,
+        contrast=args.contrast,
+    )
+    result = colour_match(
+        args.input,
+        args.output,
+        config,
+        bg_ref=args.bg,
+        transfer_strength=args.strength,
+        params=params,
+        fps=args.fps,
+        force=args.force,
+    )
+    print(f"colour-matched subject written to {result.output} ({result.frames} frames)")
+    return 0
+
+
+
+
 
 
 def _run_backdrop(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
@@ -181,6 +386,51 @@ def _run_backdrop(args: argparse.Namespace, config: Config, runner: KinoRunner) 
         print("  warning: subject and canvas have different shapes; framing shifts")
     if result.backdrop_was_shorter:
         print("  warning: the backdrop video is shorter than the subject")
+    return 0
+
+
+def _run_compose(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    result = compose(args.spec, args.output, config, force=args.force)
+    print(
+        f"composed {args.output} "
+        f"({result.media.width}x{result.media.height}, {result.media.duration_s:.2f}s)"
+    )
+    print(f"  filtergraph kept at {result.filtergraph_path}")
+    return 0
+
+
+def _run_proxy(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    result = proxy_preview(
+        args.input,
+        config,
+        height=args.height,
+        frames=args.frames,
+        compare=args.compare,
+        force=args.force,
+    )
+    print(f"proxy   {result.proxy}")
+    print(f"sheet   {result.sheet}")
+    if result.comparison is not None:
+        print(f"vs      {result.comparison}")
+    return 0
+
+
+def _run_punto(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    result = run_punto(
+        config, MlRunner.from_config(config), args.output, proxy=args.proxy, force=args.force
+    )
+    mode = "proxy" if result.proxy_mode else "full"
+    print(f"punto ({mode}) written to {result.output}")
+    print(f"  matte {result.matte.model}, stability score {result.matte.stability_score:.2f}")
+    print(
+        f"  composed {result.composed.media.width}x{result.composed.media.height}, "
+        f"{result.composed.media.duration_s:.2f}s"
+    )
+    print(f"  contact sheet {result.preview.sheet}")
+    if result.preview.comparison is not None:
+        print(f"  vs reference   {result.preview.comparison}")
+    if result.proxy_mode:
+        print("  note: --proxy skips the upscale, so the subject is ~half v23 scale")
     return 0
 
 
@@ -259,8 +509,16 @@ def _run_short(args: argparse.Namespace, config: Config, runner: KinoRunner) -> 
 HANDLERS = {
     "clean": _run_clean,
     "cutout": _run_cutout,
+    "matte": _run_matte,
+    "upscale": _run_upscale,
+    "ground": _run_ground,
+    "scale-plate": _run_scale_plate,
+    "colour-match": _run_colour_match,
     "backdrop": _run_backdrop,
     "filter": _run_filter,
+    "compose": _run_compose,
+    "proxy": _run_proxy,
+    "punto": _run_punto,
     "music": _run_music,
     "short": _run_short,
     "pipeline": _run_pipeline,

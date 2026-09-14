@@ -309,3 +309,118 @@ planului până zici tu:
 10. **Verificare nouă: `measure_alpha_spread`** (Pas 2). Prezenta canalului
     alpha nu garanta ca exista un matte. Se masoara acum ca alpha chiar
     variaza; un matte uniform ridica VerificationError.
+
+---
+
+# FAZA 2 — Optimizare & Video-Agent Toolkit (A + B)
+
+Extinderea pachetului `media-lab` cu uneltele native de compoziție din roadmap-ul Phase 2
+și înlocuirea scripturilor legacy din `docs/video-agent/pipeline/` cu rețete native,
+robuste, testate și integrate în CLI.
+
+## Ce NU intră în scop (explicit)
+
+- Servicii externe cloud sau API-uri terțe (fără scraping Pexels/Pixabay ce necesită conexiuni externe; fără backend CUDA IC-Light la distanță).
+- Modificarea contractului sau comportamentului uneltelor existente care trec testele (`matte`, `compose`, `proxy`, `filter`, `audio-bed`, `short`).
+- Orice operație distructivă asupra surselor din `in/`.
+
+---
+
+## Pași de implementare
+
+### Pasul 1 — `upscale` (Real-ESRGAN native recipe + CLI) — GATA (b1304a0)
+- **Ce se adaugă**:
+  - `src/media_lab/ml/realesrgan_infer.py`: driver ML dedicat rulat ca subprocess prin `ml_runner` (pentru menținerea graniței de proces și izolarea memoriei); suportă `--scale` (2, 4), `tile`, `tile_pad`, device auto MPS/CPU; scalează canalele RGB cu RealESRGAN și canalul alpha cu Lanczos; procesează secvențe PNG.
+  - `src/media_lab/recipes/upscale.py`: rețetă tipizată `upscale_frames` / `upscale` cu suport pentru secvențe PNG sau ProRes 4444 `.mov`, verificare căi, protecție `--force`.
+  - `src/media_lab/cli.py`: adăugare subcomandă `media-lab upscale`.
+- **Fișiere atinse**:
+  - `src/media_lab/ml/realesrgan_infer.py` (nou)
+  - `src/media_lab/recipes/upscale.py` (nou)
+  - `src/media_lab/cli.py`
+  - `tests/test_upscale.py` (nou)
+- **Teste**: `tests/test_upscale.py` (happy path mockat prin `MlRunner`, validare scalare dimensiuni 2x, păstrare integritate canal alpha, cazuri de eroare: fișier inexistent, mod invalid).
+- **Depinde de**: `src/media_lab/ml_runner.py` (deja existent).
+
+---
+
+### Pasul 2 — `subject-ground` (Foot pin, zoom-normalisation, contact shadow, canvas placement) — GATA (1210686)
+- **Ce se adaugă**:
+  - `src/media_lab/grounding.py`: modul pur de calcul geometric și grafic:
+    - Detecție puncte de contact picioare (pe baza pragului de alpha, centroid X al benzii inferioare).
+    - Median smoothing pe Y pentru a preveni flicker-ul și plutirea siluetei în mers (foot-lock).
+    - Zoom-normalisation: scalare subtilă per frame raportată la înălțimea mediană a siluetei (elimină variația de distanță a camerei).
+    - Contact shadow multi-layer: ambient occlusion dens la baza tălpii + elipsă cu falloff difuz orientată după vectorul solar (`sun_dir`).
+  - `src/media_lab/recipes/subject_ground.py`: rețetă `ground_subject` care preia cadrele decupate, aplică grounding-ul și le plasează pe canvas-ul cerut (ex: 2160x3840) gata pentru `compose-spec`.
+  - `src/media_lab/cli.py`: adăugare subcomandă `media-lab ground`.
+- **Fișiere atinse**:
+  - `src/media_lab/grounding.py` (nou)
+  - `src/media_lab/recipes/subject_ground.py` (nou)
+  - `src/media_lab/cli.py`
+  - `tests/test_subject_ground.py` (nou)
+- **Teste**: `tests/test_subject_ground.py` (calcul punct de sprijin pe siluete sintetice, generare corectă a celor 3 layere de umbră, plasare pe canvas cu offset dx/ground_y, tratare frame complet transparent).
+- **Depinde de**: numpy, PIL.
+
+---
+
+### Pasul 3 — `scale-from-plate` (Calcul scară și poziție sol din referință) — GATA (6716243)
+- **Ce se adaugă**:
+  - `src/media_lab/scale_plate.py`: funcții pure pentru calculul scării subiectului și al liniei de sol pe baza unei persoane de referință din background plate sau a unei înălțimi țintă în pixeli la coordonata Y dată.
+  - `src/media_lab/recipes/scale_plate.py` + CLI `media-lab scale-plate`: calculează parametrii optimi de scalare și poziționare pentru `ground_subject`.
+- **Fișiere atinse**:
+  - `src/media_lab/scale_plate.py` (nou)
+  - `src/media_lab/recipes/scale_plate.py` (nou)
+  - `src/media_lab/cli.py`
+  - `tests/test_scale_plate.py` (nou)
+- **Teste**: `tests/test_scale_plate.py` (formule matematice de scalare raportate la plate, validare praguri, erori pe dimensiuni nule sau negative).
+- **Depinde de**: Pasul 2.
+
+---
+
+### Pasul 4 — `colour-match` (Transfer statistic Lab + relight scenic directional/bounce) — GATA (26e7e4c)
+- **Ce se adaugă**:
+  - `src/media_lab/colour_transfer.py`: modul pur de procesare coloristică:
+    - Transfer statistic Reinhard în spațiul Lab (aliniere medie și deviație standard între regiunea de fundal și subiect).
+    - Gradient direcțional key/fill (`key_dir`, `key_amt`).
+    - Ambient color tint + ajustare gamma.
+    - Ground bounce: nuanțare și lift pe partea inferioară a corpului (~ultimii 35%) pentru integrarea reflexiei solului.
+    - Ajustări saturație și contrast menținând neafectat canalul alpha.
+  - `src/media_lab/recipes/colour_match.py`: rețetă `colour_match` cu suport pentru procesare batch de cadre RGBA.
+  - `src/media_lab/cli.py`: adăugare subcomandă `media-lab colour-match`.
+- **Fișiere atinse**:
+  - `src/media_lab/colour_transfer.py` (nou)
+  - `src/media_lab/recipes/colour_match.py` (nou)
+  - `src/media_lab/cli.py`
+  - `tests/test_colour_match.py` (nou)
+- **Teste**: `tests/test_colour_match.py` (integritate canal alpha, corectitudine transfer Lab pe culori sintetice, comportament la saturație 0, cazuri de eroare pe imagini corupte sau fără canal alpha).
+- **Depinde de**: numpy, PIL.
+
+---
+
+### Pasul 5 — Refactorizarea runner-ului `punto` (eliminare scripturi legacy & staging improvizat) — GATA (3132c0b)
+- **Ce se adaugă**:
+  - Modificare `src/media_lab/recipes/punto_v23.py`:
+    - Înlocuirea apelurilor către `docs/video-agent/pipeline/upscale_realesrgan.py` cu `recipes.upscale`.
+    - Înlocuirea apelurilor către `docs/video-agent/pipeline/place_composite.py` cu `recipes.colour_match` urmat de `recipes.subject_ground`.
+    - Eliminarea mutării manuale a folderului `work/punto-edit/isnet/up/ -> work/punto-edit/rvm_up/`.
+    - Păstrarea opțiunii `--proxy` (fast-path).
+- **Fișiere atinse**:
+  - `src/media_lab/recipes/punto_v23.py`
+  - `tests/test_punto_v23.py`
+- **Teste**: adaptarea `tests/test_punto_v23.py` pentru a valida noul flux curat și complet integrat.
+- **Depinde de**: Pașii 1, 2, 4.
+
+---
+
+### Pasul 6 — Verificare completă, documentație și sincronizare — GATA
+- **Ce se adaugă**:
+  - Actualizare `README.md` (noile comenzi CLI, exemple de utilizare).
+  - Actualizare `DECISIONS.md` cu deciziile luate.
+  - Arhivarea notată a scripturilor din `docs/video-agent/pipeline/` ca superseded de noile comenzi native.
+  - Rularea tuturor verificărilor de calitate: `make lint` (`ruff`), `make typecheck` (`mypy` strict), `make test` (toată suita `pytest` verde cu coverage ≥ 80%).
+- **Fișiere atinse**:
+  - `README.md`
+  - `DECISIONS.md`
+  - `PLAN.md` (bifare pași finalizați)
+  - `docs/video-agent/README.md`
+- **Depinde de**: Pașii 1–5.
+
