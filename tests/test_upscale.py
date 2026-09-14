@@ -159,8 +159,6 @@ def test_upscale_fails_when_weights_missing(
         upscale(silent_video, config.out_dir / "out.mp4", config, runner, scale=2)
 
 
-
-
 def test_upscale_fails_on_missing_source(
     upscale_config: Config,
     ml_runner: MlRunner,

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from ..config import Config
 from ..contact_sheet import extract_frames, side_by_side, tile
+from ..errors import ValidationError
 from ..ffmpeg import run_ffmpeg
 from ..paths import ensure_readable_source, ensure_writable_output, work_directory, work_path
 from ..verify import verify_render
@@ -31,9 +32,22 @@ class ProxyResult:
 
 def _encode_proxy(source: Path, height: int, output: Path, config: Config) -> None:
     run_ffmpeg(
-        ["-i", str(source), "-vf", f"scale=-2:{height}",
-         "-c:v", "libx264", "-preset", "veryfast", "-crf", "30",
-         "-an", "-movflags", "+faststart", str(output)],
+        [
+            "-i",
+            str(source),
+            "-vf",
+            f"scale=-2:{height}",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "30",
+            "-an",
+            "-movflags",
+            "+faststart",
+            str(output),
+        ],
         config,
     )
 
@@ -54,7 +68,7 @@ def proxy_preview(
     (`compare` on the left, `source` on the right).
     """
     if frames < MIN_FRAMES:
-        raise ValueError(f"frames must be at least {MIN_FRAMES}, got {frames}")
+        raise ValidationError(f"frames must be at least {MIN_FRAMES}, got {frames}")
     resolved_source = ensure_readable_source(source)
     stem = resolved_source.stem
 
@@ -63,8 +77,12 @@ def proxy_preview(
     verify_render(proxy, config)
 
     sheet = ensure_writable_output(work_path(config, f"{stem}-sheet", ".jpg"), config, force=force)
-    tile(extract_frames(proxy, frames, config, work_directory(config, f"{stem}-cs")),
-         sheet, config, cols=cols)
+    tile(
+        extract_frames(proxy, frames, config, work_directory(config, f"{stem}-cs")),
+        sheet,
+        config,
+        cols=cols,
+    )
 
     comparison: Path | None = None
     if compare is not None:
@@ -72,8 +90,12 @@ def proxy_preview(
         ref_proxy = work_path(config, f"{stem}-cmp-proxy", ".mp4")
         _encode_proxy(reference, height, ref_proxy, config)
         ref_sheet = work_path(config, f"{stem}-cmp-sheet", ".jpg")
-        tile(extract_frames(ref_proxy, frames, config, work_directory(config, f"{stem}-cs-cmp")),
-             ref_sheet, config, cols=cols)
+        tile(
+            extract_frames(ref_proxy, frames, config, work_directory(config, f"{stem}-cs-cmp")),
+            ref_sheet,
+            config,
+            cols=cols,
+        )
         comparison = ensure_writable_output(
             work_path(config, f"{stem}-vs", ".jpg"), config, force=force
         )

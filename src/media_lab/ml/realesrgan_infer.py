@@ -56,16 +56,33 @@ def main() -> None:
         num_grow_ch=num_grow_ch,
         scale=args.scale,
     )
-    upsampler = RealESRGANer(
-        scale=args.scale,
-        model_path=args.weights,
-        model=model,
-        tile=args.tile,
-        tile_pad=args.tile_pad,
-        pre_pad=0,
-        half=False,
-        device=dev,
-    )
+    try:
+        upsampler = RealESRGANer(
+            scale=args.scale,
+            model_path=args.weights,
+            model=model,
+            tile=args.tile,
+            tile_pad=args.tile_pad,
+            pre_pad=0,
+            half=False,
+            device=dev,
+        )
+    except Exception as exc:  # noqa: BLE001
+        if dev != "cpu":
+            sys.stderr.write(f"RealESRGANer init failed on {dev} ({exc}), falling back to CPU...\n")
+            dev = "cpu"
+            upsampler = RealESRGANer(
+                scale=args.scale,
+                model_path=args.weights,
+                model=model,
+                tile=args.tile,
+                tile_pad=args.tile_pad,
+                pre_pad=0,
+                half=False,
+                device="cpu",
+            )
+        else:
+            raise
 
     t0 = time.time()
     for i, frame_path in enumerate(frames):
@@ -74,7 +91,36 @@ def main() -> None:
         rgb = arr[..., :3][:, :, ::-1]  # BGR for RealESRGAN
         a = arr[..., 3]
 
-        out_bgr, _ = upsampler.enhance(rgb, outscale=args.scale)
+        try:
+            out_bgr, _ = upsampler.enhance(rgb, outscale=args.scale)
+        except Exception as exc:  # noqa: BLE001
+            if dev != "cpu":
+                sys.stderr.write(
+                    f"RealESRGAN enhance failed on {dev} ({exc}), falling back to CPU...\n"
+                )
+                dev = "cpu"
+                model_cpu = RRDBNet(
+                    num_in_ch=3,
+                    num_out_ch=3,
+                    num_feat=64,
+                    num_block=num_block,
+                    num_grow_ch=num_grow_ch,
+                    scale=args.scale,
+                )
+                upsampler = RealESRGANer(
+                    scale=args.scale,
+                    model_path=args.weights,
+                    model=model_cpu,
+                    tile=args.tile,
+                    tile_pad=args.tile_pad,
+                    pre_pad=0,
+                    half=False,
+                    device="cpu",
+                )
+                out_bgr, _ = upsampler.enhance(rgb, outscale=args.scale)
+            else:
+                raise
+
         out_rgb = out_bgr[:, :, ::-1]
 
         target_w, target_h = out_rgb.shape[1], out_rgb.shape[0]

@@ -27,6 +27,11 @@ probed and checked against what was asked for.
 | `media-lab proxy`        | Fast low-res proxy + contact sheet of a render, optional side-by-side  |
 | `media-lab music`        | Mix a music bed under the voice with sidechain ducking                 |
 | `media-lab short`        | Reframe to 9:16 (or another ratio), export, quality-gate, thumbnail    |
+| `media-lab stems`        | Separate audio stems (Demucs) or clean speech in a video clip          |
+| `media-lab subtitles`    | Transcribe speech (Whisper) and style/burn dynamic social subtitles   |
+| `media-lab photo`        | Batch/single photo edit, social crop, backdrop swap & colour match     |
+| `media-lab inspect`      | Deep media inspection returning ground-truth JSON for autonomous agents|
+| `media-lab edit`         | Declarative prompt-to-edit orchestrator (flags or edit-spec YAML)      |
 | `media-lab pipeline`     | Run the whole edit in one pass                                         |
 | `media-lab punto`        | Reproduce the punto v23 render through matte/compose/proxy             |
 | `media-lab clean`        | Empty `work/` (add `--dry-run` to preview first)                       |
@@ -91,6 +96,24 @@ uv run media-lab colour-match work/matte-up.mov -o work/relit.mov --bg in/bg.mp4
 uv run media-lab ground   work/relit.mov -o work/placed.mov --ground-y 3560
 uv run media-lab compose  work/shot.yaml -o out/final.mp4
 uv run media-lab proxy    out/final.mp4 --compare out/prev.mp4
+
+# autonomous agent & extensions workflow (Phase 3)
+# 1. Separate audio stems or clean speech
+uv run media-lab stems in/podcast.mp4 -o out/stems/ --two-stems vocals
+uv run media-lab stems in/noisy_vlog.mp4 -o out/stems/ --clean-speech -c out/cleaned.mp4
+
+# 2. Transcribe & burn dynamic social subtitles (tiktok, clean, box)
+uv run media-lab subtitles in/clip.mp4 -o out/subtitled.mp4 --style tiktok --burn
+
+# 3. Social photo editing (1:1 feed, 4:5 portrait, 9:16 story) with Reinhard backdrop swap
+uv run media-lab photo in/model.jpg -o out/portrait.jpg --target 4:5 --bg in/studio.jpg --look warm
+
+# 4. Deep inspection for agent decision-making
+uv run media-lab inspect in/clip.mp4 --json
+
+# 5. Declarative prompt-to-edit orchestration (one-pass audio cleaning, grading, reframing, subs, music)
+uv run media-lab edit in/clip.mp4 -o out/reel.mp4 --target 9:16 --clean-speech --look cinematic --subtitles --sub-style tiktok --music in/beat.mp3
+uv run media-lab edit --spec spec.yaml
 ```
 
 The pipeline runs: cutout, backdrop, look, restore the voice the compositor

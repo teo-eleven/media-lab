@@ -15,7 +15,7 @@ class ConfigError(MediaLabError):
     """Configuration is missing, malformed, or points at something absent."""
 
 
-class ValidationError(MediaLabError):
+class ValidationError(MediaLabError, ValueError):
     """A caller-supplied argument is outside the range this project accepts."""
 
 

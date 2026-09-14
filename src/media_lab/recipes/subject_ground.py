@@ -8,10 +8,16 @@ from pathlib import Path
 from PIL import Image
 
 from ..config import Config
-from ..errors import MediaLabError, PathSafetyError, ValidationError
+from ..errors import MediaLabError, ValidationError
 from ..ffmpeg import run_ffmpeg
 from ..grounding import compute_grounding_transforms, detect_foot_point, render_contact_shadow
-from ..paths import ensure_readable_source, ensure_writable_output, work_directory
+from ..paths import (
+    ensure_readable_directory,
+    ensure_readable_source,
+    ensure_writable_directory,
+    ensure_writable_output,
+    work_directory,
+)
 from ..probe import MediaInfo, probe
 from ..verify import Expectations, verify_render
 
@@ -78,20 +84,17 @@ def ground_subject(
     if base_scale <= 0.0:
         raise ValidationError(f"base_scale must be positive, got {base_scale}")
 
-    source_path = Path(source)
-    if not source_path.is_absolute():
-        source_path = (config.root / source_path).resolve()
-    if not source_path.exists():
-        raise MediaLabError(f"source path does not exist: {source_path}")
+    source_raw = Path(source)
+    if source_raw.is_dir():
+        source_path = ensure_readable_directory(source_raw)
+        is_source_dir = True
+    else:
+        source_path = ensure_readable_source(source_raw)
+        is_source_dir = False
 
-    output_path = Path(output)
-    if not output_path.is_absolute():
-        output_path = (config.root / output_path).resolve()
-
-    is_source_dir = source_path.is_dir()
-    is_output_video = output_path.suffix.lower() in (".mov", ".mp4", ".mkv", ".webm")
-
-    stem = output_path.stem
+    output_raw = Path(output)
+    is_output_video = output_raw.suffix.lower() in (".mov", ".mp4", ".mkv", ".webm")
+    stem = output_raw.stem
 
     if is_source_dir:
         frames_in = source_path
@@ -101,35 +104,31 @@ def ground_subject(
         target_fps = fps or STILL_FPS_FALLBACK
         duration_s = len(frame_paths) / target_fps
     else:
-        resolved_source = ensure_readable_source(source_path)
-        info = probe(resolved_source, config)
+        info = probe(source_path, config)
         if not info.has_video:
-            raise MediaLabError(f"source has no video stream: {resolved_source}")
+            raise MediaLabError(f"source has no video stream: {source_path}")
         target_fps = fps or (info.fps if info.fps > 0 else STILL_FPS_FALLBACK)
         duration_s = info.duration_s
 
         frames_in = work_directory(config, f"{stem}-ground-src")
         _clear_frames(frames_in)
-        run_ffmpeg(["-i", str(resolved_source), str(frames_in / "f-%04d.png")], config)
+        run_ffmpeg(["-i", str(source_path), str(frames_in / "f-%04d.png")], config)
         frame_paths = sorted(frames_in.glob("f-*.png"))
 
     if not is_output_video:
-        if output_path.exists() and any(output_path.iterdir()) and not force:
-            raise PathSafetyError(f"output directory is not empty: {output_path}")
-        output_path.mkdir(parents=True, exist_ok=True)
+        output_path = ensure_writable_directory(output_raw, config, force=force)
         out_frames_dir = output_path
     else:
-        ensure_writable_output(output_path, config, force=force)
+        output_path = ensure_writable_output(output_raw, config, force=force)
         out_frames_dir = work_directory(config, f"{stem}-ground-frames")
         _clear_frames(out_frames_dir)
 
-    # Pass 1: detect foot contact points for all frames
+    # Pass 1: detect foot contact points for all frames (streaming to save memory)
     foot_points = []
-    opened_images: list[Image.Image] = []
     for fp in frame_paths:
-        im = Image.open(fp).convert("RGBA")
-        opened_images.append(im)
-        foot_points.append(detect_foot_point(im))
+        with Image.open(fp) as im:
+            rgba = im.convert("RGBA")
+            foot_points.append(detect_foot_point(rgba))
 
     # Pass 2: compute transforms (pinning + zoom normalisation)
     transforms = compute_grounding_transforms(
@@ -152,20 +151,22 @@ def ground_subject(
             opacity=shadow_opacity,
         )
 
-    # Pass 3: render frames onto canvas
-    for i, (im, t) in enumerate(zip(opened_images, transforms, strict=True)):
-        orig_w, orig_h = im.size
-        new_w = max(1, int(orig_w * t.scale))
-        new_h = max(1, int(orig_h * t.scale))
-        sub = im.resize((new_w, new_h), Image.Resampling.LANCZOS)
+    # Pass 3: render frames onto canvas (streaming image load and save)
+    for i, (fp, t) in enumerate(zip(frame_paths, transforms, strict=True)):
+        with Image.open(fp) as raw_im:
+            frame_im = raw_im.convert("RGBA")
+            orig_w, orig_h = frame_im.size
+            new_w = max(1, int(orig_w * t.scale))
+            new_h = max(1, int(orig_h * t.scale))
+            sub = frame_im.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
-        canvas_img = Image.new("RGBA", canvas, (0, 0, 0, 0))
-        if shadow_img is not None:
-            canvas_img = Image.alpha_composite(canvas_img, shadow_img)
+            canvas_img = Image.new("RGBA", canvas, (0, 0, 0, 0))
+            if shadow_img is not None:
+                canvas_img = Image.alpha_composite(canvas_img, shadow_img)
 
-        canvas_img.alpha_composite(sub, (t.pos_x, t.pos_y))
-        dest_file = out_frames_dir / f"f-{i + 1:04d}.png"
-        canvas_img.save(dest_file)
+            canvas_img.alpha_composite(sub, (t.pos_x, t.pos_y))
+            dest_file = out_frames_dir / f"f-{i + 1:04d}.png"
+            canvas_img.save(dest_file)
 
     if not is_output_video:
         return GroundResult(

@@ -24,4 +24,3 @@ def check_choice[T](value: T, allowed: Sequence[T], label: str) -> T:
         options = ", ".join(str(x) for x in allowed)
         raise ValidationError(f"{label} must be one of {options}, got {value!r}")
     return value
-

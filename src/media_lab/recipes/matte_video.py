@@ -109,16 +109,32 @@ def matte_video(
     ml_runner.run(
         _RVM_INFER,
         [
-            str(frames_in), str(rvm_out), model, str(weight), str(config.rvm_repo),
-            "--alpha-lift", str(alpha_lift), "--alpha-gain", str(alpha_gain),
+            str(frames_in),
+            str(rvm_out),
+            model,
+            str(weight),
+            str(config.rvm_repo),
+            "--alpha-lift",
+            str(alpha_lift),
+            "--alpha-gain",
+            str(alpha_gain),
         ],
     )
 
     run_ffmpeg(
         [
-            "-framerate", f"{fps:g}", "-i", str(rvm_out / "f-%04d.png"),
-            "-c:v", "prores_ks", "-profile:v", "4", "-pix_fmt", "yuva444p10le",
-            "-an", str(resolved_output),
+            "-framerate",
+            f"{fps:g}",
+            "-i",
+            str(rvm_out / "f-%04d.png"),
+            "-c:v",
+            "prores_ks",
+            "-profile:v",
+            "4",
+            "-pix_fmt",
+            "yuva444p10le",
+            "-an",
+            str(resolved_output),
         ],
         config,
     )

@@ -224,9 +224,7 @@ def _occlusion_branch(spec: ComposeSpec) -> tuple[str, str, str]:
     if occ is None:
         return "", "[bgA][1:v]overlay=0:0:format=auto[out_pre]", ""
     w = spec.background.width
-    ramp = (
-        f"if(lt(Y,{occ.feather}),255*Y/{occ.feather},255)" if occ.feather > 0 else "255"
-    )
+    ramp = f"if(lt(Y,{occ.feather}),255*Y/{occ.feather},255)" if occ.feather > 0 else "255"
     strip = (
         f"[bgB]crop={w}:{occ.height}:0:{occ.y},format=yuva444p,"
         f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{ramp}'[fg];"
@@ -270,8 +268,15 @@ def build_filtergraph(spec: ComposeSpec) -> FilterGraph:
         map_target="[out]",
         frames=bg.frames,
         encode_args=(
-            "-c:v", "libx264", "-profile:v", "high",
-            "-preset", spec.output.preset, "-crf", str(spec.output.crf),
-            "-movflags", "+faststart",
+            "-c:v",
+            "libx264",
+            "-profile:v",
+            "high",
+            "-preset",
+            spec.output.preset,
+            "-crf",
+            str(spec.output.crf),
+            "-movflags",
+            "+faststart",
         ),
     )

@@ -27,7 +27,6 @@ RVM_WEIGHT_FILES = {"resnet50": "rvm_resnet50.pth", "mobilenetv3": "rvm_mobilene
 REALESRGAN_WEIGHT_FILES = {2: "RealESRGAN_x2plus.pth", 4: "RealESRGAN_x4plus.pth"}
 
 
-
 @dataclass(frozen=True, slots=True)
 class Config:
     """Resolved, validated settings. Immutable once built."""
@@ -223,4 +222,3 @@ def require_realesrgan(config: Config, *, scale: int = 2) -> Path:
             f"Expected {REALESRGAN_WEIGHT_FILES[scale]} under {config.weights_dir}."
         )
     return weight_file
-

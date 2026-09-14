@@ -71,8 +71,7 @@ def _fake_child(
             )
         (out_dir / "stats.json").write_text(
             json.dumps(
-                {"model": argv[2], "device": "cpu", "frames": per_frame,
-                 "stability_score": score}
+                {"model": argv[2], "device": "cpu", "frames": per_frame, "stability_score": score}
             ),
             encoding="utf-8",
         )
@@ -88,9 +87,7 @@ def test_writes_a_prores_matte_with_alpha_and_a_score(
 ) -> None:
     monkeypatch.setattr(MlRunner, "run", _fake_child(score=5.5))
 
-    result = matte_video(
-        silent_video, matte_config.work_dir / "m.mov", matte_config, ml_runner
-    )
+    result = matte_video(silent_video, matte_config.work_dir / "m.mov", matte_config, ml_runner)
 
     assert (matte_config.work_dir / "m.mov").is_file()
     assert result.media.has_alpha is True
@@ -108,7 +105,10 @@ def test_passes_the_selected_model_and_weight_to_the_child(
     monkeypatch.setattr(MlRunner, "run", _fake_child(captured=captured))
 
     matte_video(
-        silent_video, matte_config.work_dir / "m.mov", matte_config, ml_runner,
+        silent_video,
+        matte_config.work_dir / "m.mov",
+        matte_config,
+        ml_runner,
         model="mobilenetv3",
     )
 
@@ -124,8 +124,12 @@ def test_forwards_alpha_post_processing_knobs(
     monkeypatch.setattr(MlRunner, "run", _fake_child(captured=captured))
 
     matte_video(
-        silent_video, matte_config.work_dir / "m.mov", matte_config, ml_runner,
-        alpha_lift=V23_ALPHA_LIFT, alpha_gain=V23_ALPHA_GAIN,
+        silent_video,
+        matte_config.work_dir / "m.mov",
+        matte_config,
+        ml_runner,
+        alpha_lift=V23_ALPHA_LIFT,
+        alpha_gain=V23_ALPHA_GAIN,
     )
 
     assert "--alpha-lift" in captured["args"]
@@ -204,8 +208,21 @@ def test_real_rvm_on_a_short_clip(tmp_path: Path) -> None:
 
     short = config.work_dir / "matte-smoke-src.mp4"
     subprocess.run(
-        [str(config.ffmpeg), "-y", "-loglevel", "error", "-i", str(source),
-         "-frames:v", "10", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(short)],
+        [
+            str(config.ffmpeg),
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            str(source),
+            "-frames:v",
+            "10",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(short),
+        ],
         check=True,
     )
     out = config.work_dir / "matte-smoke.mov"

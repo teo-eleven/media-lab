@@ -5,6 +5,27 @@ Newest first.
 
 ---
 
+## 2026-09-14 — Phase 3: Demucs audio separation, Whisper ASS subtitles, Photo batch processing, Deep Inspection, and Declarative EditSpec Orchestrator
+
+**Context.** Creating social media content and enabling an autonomous media-lab agent
+required:
+1. Audio voice isolation (stems) and speech denoising without external cloud services.
+2. Word-level subtitle generation with modern social styling (TikTok, clean, box) burned or exported.
+3. High-quality single and batch photo processing with Reinhard color harmonization and shadow grounding.
+4. Objective media ground truth (deep inspection metrics: duration, resolution, visual palette, silhouette, audio levels, speech detection) so an AI agent can make informed editing choices.
+5. Declarative prompt-to-edit orchestration (`EditSpec` schema) that can chain speech cleaning, grading, reframing, subtitles, and music mixing in an optimized, single-pass pipeline.
+
+**Chosen.**
+1. `ml/demucs_infer.py` + `recipes/stems.py`: Demucs v4 (htdemucs) run in isolated child process via `ml_runner.py`, supporting MPS hardware acceleration and `--clean-speech` video remuxing.
+2. `ml/whisper_infer.py` + `subtitles.py` + `recipes/subtitles.py`: OpenAI Whisper run locally in isolated child process with fallback, generating typed ASS subtitles with custom social styles or burning via ffmpeg `libass`.
+3. `recipes/photo.py`: PIL-based image composition with smart aspect ratio cropping (1:1, 4:5, 9:16, 16:9), Reinhard Lab color matching, contact shadows, unsharp mask sharpening, and directory batch processing.
+4. `inspect.py`: Deep inspection engine computing ground truth metrics directly from ffprobe and PIL analysis (brightness, contrast, dominant RGB/Lab palette, silhouette detection, audio RMS and speech presence) returned as typed dataclasses or JSON.
+5. `edit_spec.py` + `recipes/edit.py`: Declarative edit specification schema (YAML/dict/CLI flags) and executor chaining native recipes with deterministic intermediate tracking and strict verification.
+
+**Trade-off accepted.** Increased ML inference dependencies (demucs, openai-whisper) managed in sub-processes to prevent torch memory leaks and maintain strict mypy typing on the core package.
+
+---
+
 ## 2026-09-14 — Phase 2: modular upscale, Reinhard colour-match, foot-pinning grounding replace legacy scripts
 
 **Context.** Phase 1 staged frames around `docs/video-agent/pipeline/upscale_realesrgan.py`
