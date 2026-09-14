@@ -20,6 +20,7 @@ from .recipes.filters import LOOKS, apply_look, apply_look_chain
 from .recipes.matte_video import MODEL_CHOICES, matte_video
 from .recipes.proxy_preview import proxy_preview
 from .recipes.punto_v23 import run_punto
+from .recipes.scale_plate import estimate_plate_scale
 from .recipes.subject_ground import ground_subject
 from .recipes.to_short import to_short
 from .recipes.upscale import upscale
@@ -88,6 +89,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Disable zoom normalisation",
     )
     ground_cmd.add_argument("--fps", type=float, help="Framerate override")
+
+    scale_cmd = subcommands.add_parser(
+        "scale-plate",
+        help="Estimate scale and ground line for subject from background plate reference",
+    )
+    scale_cmd.add_argument("input", help="Cutout image or directory of cutout frames")
+    scale_cmd.add_argument(
+        "--ref-height", type=int, required=True, help="Reference person height in px"
+    )
+    scale_cmd.add_argument(
+        "--ref-ground", type=int, required=True, help="Reference ground contact line Y in px"
+    )
+    scale_cmd.add_argument(
+        "--ratio", type=float, default=1.0, help="Real-world height ratio (subject / ref)"
+    )
 
     backdrop = subcommands.add_parser("backdrop", help="Composite a cutout onto a backdrop")
     _add_io_arguments(backdrop)
@@ -278,6 +294,27 @@ def _run_ground(args: argparse.Namespace, config: Config, _runner: KinoRunner) -
     return 0
 
 
+def _run_scale_plate(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    result = estimate_plate_scale(
+        args.input,
+        config,
+        ref_height=args.ref_height,
+        ref_ground_y=args.ref_ground,
+        height_ratio=args.ratio,
+    )
+    print(f"scale estimate for {args.input}:")
+    print(f"  measured subject height: {result.subject_height_px}px")
+    print(f"  target height:           {result.target_height_px}px")
+    print(f"  recommended scale:       {result.base_scale:.4f}")
+    print(f"  recommended ground-y:    {result.ground_y}")
+    print(
+        f"  hint: pass --scale {result.base_scale:.4f} "
+        f"--ground-y {result.ground_y} to media-lab ground"
+    )
+    return 0
+
+
+
 
 
 def _run_backdrop(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
@@ -436,6 +473,7 @@ HANDLERS = {
     "matte": _run_matte,
     "upscale": _run_upscale,
     "ground": _run_ground,
+    "scale-plate": _run_scale_plate,
     "backdrop": _run_backdrop,
     "filter": _run_filter,
     "compose": _run_compose,
