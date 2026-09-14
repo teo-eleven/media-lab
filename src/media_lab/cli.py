@@ -434,13 +434,31 @@ def build_parser() -> argparse.ArgumentParser:
         "prompt",
         help="Natural language autonomous editor (Romanian and English prompt-to-edit)",
     )
-    prompt_cmd.add_argument("prompt", help="Natural language editing instructions")
-    prompt_cmd.add_argument("-i", "--input", required=True, help="Input media file path")
-    prompt_cmd.add_argument("-o", "--output", required=True, help="Output destination path")
     prompt_cmd.add_argument(
-        "--plan-only", action="store_true", help="Print derived action plan without executing"
+        "arg1",
+        nargs="?",
+        default=None,
+        help="Editing instructions or input media file path",
     )
-    prompt_cmd.add_argument("--force", action="store_true", help="Overwrite existing output")
+    prompt_cmd.add_argument(
+        "arg2",
+        nargs="?",
+        default=None,
+        help="Editing instructions when first argument is input file",
+    )
+    prompt_cmd.add_argument("-i", "--input", help="Input media file path")
+    prompt_cmd.add_argument("-o", "--output", help="Output destination path")
+    prompt_cmd.add_argument(
+        "-p", "--prompt", dest="prompt_flag", help="Natural language editing instructions"
+    )
+    prompt_cmd.add_argument(
+        "--plan-only",
+        "--dry-run",
+        dest="plan_only",
+        action="store_true",
+        help="Print derived action plan without executing",
+    )
+    prompt_cmd.add_argument("-f", "--force", action="store_true", help="Overwrite existing output")
 
     subcommands.add_parser(
         "mcp",
@@ -1119,16 +1137,50 @@ def _run_retouch(args: argparse.Namespace, config: Config, runner: KinoRunner) -
 
 def _run_prompt(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
     ml_runner = MlRunner.from_config(config)
+
+    input_file: str | None = args.input
+    prompt_text: str | None = args.prompt_flag
+
+    # Disambiguate positional arguments (arg1, arg2)
+    if input_file is None:
+        if args.arg1 and args.arg2:
+            input_file = args.arg1
+            prompt_text = prompt_text or args.arg2
+        elif args.arg1 and prompt_text:
+            input_file = args.arg1
+        elif args.arg1 and not prompt_text:
+            p = Path(args.arg1)
+            if p.exists() or p.suffix:
+                input_file = args.arg1
+            else:
+                prompt_text = args.arg1
+    else:
+        if prompt_text is None and args.arg1:
+            prompt_text = args.arg1
+
+    if not input_file:
+        raise ValidationError(
+            "input media file is required (pass as positional path or via -i/--input)"
+        )
+    if not prompt_text:
+        raise ValidationError("prompt is required (pass as positional text or via -p/--prompt)")
+
     if args.plan_only:
-        plan = plan_prompt(args.prompt, args.input, args.output)
-        print(f"Plan derived from: {args.prompt!r}")
+        output_dest = args.output or "out/preview_plan.mp4"
+        plan = plan_prompt(prompt_text, input_file, output_dest)
+        print(f"Plan derived from: {prompt_text!r}")
         for i, op in enumerate(plan.operations, start=1):
             print(f"  {i}. {op}")
         return 0
 
+    if not args.output:
+        raise ValidationError(
+            "-o/--output destination is required unless --plan-only / --dry-run is specified"
+        )
+
     result = execute_prompt(
-        args.prompt,
-        args.input,
+        prompt_text,
+        input_file,
         args.output,
         config,
         runner,
