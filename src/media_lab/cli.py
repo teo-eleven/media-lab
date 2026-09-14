@@ -24,7 +24,9 @@ from .recipes.colour_match import colour_match
 from .recipes.compose_spec import compose
 from .recipes.cutout import DEVICE_CHOICES, QUALITY_CHOICES, cut_out_person
 from .recipes.edit import run_edit_spec
+from .recipes.face_retouch import retouch_portrait
 from .recipes.filters import LOOKS, apply_look, apply_look_chain
+from .recipes.inpainting import inpaint_image
 from .recipes.matte_video import MODEL_CHOICES, matte_video
 from .recipes.photo import PHOTO_ASPECTS, PHOTO_LOOKS, edit_photo, process_photo_batch
 from .recipes.proxy_preview import proxy_preview
@@ -38,6 +40,7 @@ from .recipes.stems import AUDIO_FORMAT_CHOICES, TWO_STEMS_CHOICES, separate_ste
 from .recipes.subject_ground import ground_subject
 from .recipes.subtitles import generate_subtitles
 from .recipes.to_short import to_short
+from .recipes.typography import VALID_POSITIONS, TypographyStyle, apply_typography
 from .recipes.upscale import upscale
 from .subtitles import STYLE_CHOICES
 from .verify import ASPECT_RATIOS
@@ -372,6 +375,58 @@ def build_parser() -> argparse.ArgumentParser:
     broll_cmd.add_argument(
         "--volume", type=float, default=0.0, help="B-roll audio mix volume (0.0 = muted)"
     )
+
+    typo_cmd = subcommands.add_parser(
+        "text-overlay",
+        help="Render styled typography title badge / lower-third onto photo or video",
+    )
+    _add_io_arguments(typo_cmd)
+    typo_cmd.add_argument("--text", required=True, help="Text to render")
+    typo_cmd.add_argument(
+        "--position", choices=sorted(VALID_POSITIONS), default="bottom", help="Screen position"
+    )
+    typo_cmd.add_argument("--font-size", type=int, default=44, help="Font size in pixels")
+    typo_cmd.add_argument("--text-color", default="#FFFFFF", help="Hex color for text")
+    typo_cmd.add_argument(
+        "--no-badge", dest="badge", action="store_false", help="Disable pill badge"
+    )
+    typo_cmd.add_argument(
+        "--start", type=float, default=0.0, help="Video overlay start time in seconds"
+    )
+    typo_cmd.add_argument(
+        "--duration", type=float, default=None, help="Video overlay duration in seconds"
+    )
+
+    inpaint_cmd = subcommands.add_parser(
+        "inpaint",
+        help="Content-aware object erasing and background reconstruction",
+    )
+    _add_io_arguments(inpaint_cmd)
+    inpaint_cmd.add_argument("--bbox", help="Comma-separated x,y,w,h bounding box to erase")
+    inpaint_cmd.add_argument("--mask", help="Path to binary mask image")
+    inpaint_cmd.add_argument(
+        "--method", choices=["telea", "ns"], default="telea", help="Inpainting algorithm"
+    )
+    inpaint_cmd.add_argument("--radius", type=int, default=5, help="Inpaint neighborhood radius")
+
+    retouch_cmd = subcommands.add_parser(
+        "retouch",
+        help="Portrait retouching (edge-preserving skin smoothing and depth-of-field bokeh)",
+    )
+    _add_io_arguments(retouch_cmd)
+    retouch_cmd.add_argument(
+        "--no-smooth", dest="smooth", action="store_false", help="Disable skin smoothing"
+    )
+    retouch_cmd.add_argument(
+        "--skin-strength", type=float, default=0.5, help="Skin smoothing strength [0.0, 1.0]"
+    )
+    retouch_cmd.add_argument(
+        "--bokeh", type=float, default=0.0, help="Background depth blur sigma (0 to disable)"
+    )
+    retouch_cmd.add_argument(
+        "--radiance", type=float, default=0.0, help="Skin radiance warmth [0.0, 1.0]"
+    )
+    retouch_cmd.add_argument("--mask", help="Optional silhouette mask for depth bokeh")
 
     short = subcommands.add_parser("short", help="Export a vertical social clip")
     _add_io_arguments(short)
@@ -972,6 +1027,70 @@ def _run_broll(args: argparse.Namespace, config: Config, runner: KinoRunner) -> 
     return 0
 
 
+def _run_text_overlay(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    style = TypographyStyle(
+        position=args.position,
+        font_size=args.font_size,
+        text_color=args.text_color,
+        badge=args.badge,
+    )
+    result = apply_typography(
+        args.input,
+        args.output,
+        args.text,
+        config,
+        style=style,
+        start_s=args.start,
+        duration_s=args.duration,
+        force=args.force,
+    )
+    media_type = "video" if result.is_video else "image"
+    print(f"text-overlay written to {args.output} ({media_type}, {result.width}x{result.height})")
+    print(f"  lines rendered: {result.lines_rendered}")
+    return 0
+
+
+def _run_inpaint(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    bbox: tuple[int, int, int, int] | None = None
+    if args.bbox:
+        parts = [int(p.strip()) for p in args.bbox.split(",")]
+        if len(parts) != 4:
+            raise MediaLabError("--bbox must be 'x,y,w,h' with 4 integer values")
+        bbox = (parts[0], parts[1], parts[2], parts[3])
+
+    result = inpaint_image(
+        args.input,
+        args.output,
+        config,
+        bbox=bbox,
+        mask_path=args.mask,
+        method=args.method,
+        inpaint_radius=args.radius,
+        force=args.force,
+    )
+    print(f"inpaint written to {args.output} ({result.width}x{result.height})")
+    print(f"  method: {result.method}, erased pixels: {result.erased_pixels}")
+    return 0
+
+
+def _run_retouch(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    result = retouch_portrait(
+        args.input,
+        args.output,
+        config,
+        smooth_skin=args.smooth,
+        skin_strength=args.skin_strength,
+        depth_blur=args.bokeh > 0.0,
+        blur_sigma=args.bokeh,
+        mask_path=args.mask,
+        radiance=args.radiance,
+        force=args.force,
+    )
+    print(f"retouch written to {args.output} ({result.width}x{result.height})")
+    print(f"  skin smoothed: {result.skin_smoothed}, depth blur: {result.depth_blur_applied}")
+    return 0
+
+
 HANDLERS = {
     "clean": _run_clean,
     "cutout": _run_cutout,
@@ -999,6 +1118,9 @@ HANDLERS = {
     "smart-reframe": _run_smart_reframe,
     "punch-zoom": _run_punch_zoom,
     "broll": _run_broll,
+    "text-overlay": _run_text_overlay,
+    "inpaint": _run_inpaint,
+    "retouch": _run_retouch,
 }
 
 

@@ -524,7 +524,7 @@ Transformarea `media-lab` într-un agent complet capabil să execute orice edita
 
 ---
 
-### Pasul 3 — Zona 3: Foto & Grafică (`typography`, `inpainting`, `face_retouch`)
+### Pasul 3 — Zona 3: Foto & Grafică (`typography`, `inpainting`, `face_retouch`) — GATA
 - **Ce se face**:
   - `src/media_lab/recipes/typography.py`: Motor de text & titluri grafice peste imagini/video (drop shadow, stroke, capsule colorate, împachetare automată).
   - `src/media_lab/recipes/inpainting.py`: Ștergere obiecte nedorite și reconstrucție fundal (inpainting local).
