@@ -514,7 +514,7 @@ Transformarea `media-lab` într-un agent complet capabil să execute orice edita
 
 ---
 
-### Pasul 2 — Zona 2: Video & Pacing (`smart_reframe`, `punch_zoom`, `broll`)
+### Pasul 2 — Zona 2: Video & Pacing (`smart_reframe`, `punch_zoom`, `broll`) — GATA
 - **Ce se face**:
   - `src/media_lab/recipes/smart_reframe.py`: Reîncadrare inteligentă 9:16 cu face tracking și panning fluid cinematic.
   - `src/media_lab/recipes/punch_zoom.py`: Punch-in zooms dinamice (1.1x–1.15x) pe punctele cheie pentru retenție video.

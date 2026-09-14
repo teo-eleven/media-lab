@@ -19,6 +19,7 @@ from .pipeline import run_pipeline
 from .recipes.audio_bed import add_music_bed
 from .recipes.audio_enhance import VOICE_PROFILES, enhance_audio
 from .recipes.backdrop import place_on_backdrop
+from .recipes.broll import BrollCut, insert_broll
 from .recipes.colour_match import colour_match
 from .recipes.compose_spec import compose
 from .recipes.cutout import DEVICE_CHOICES, QUALITY_CHOICES, cut_out_person
@@ -27,10 +28,12 @@ from .recipes.filters import LOOKS, apply_look, apply_look_chain
 from .recipes.matte_video import MODEL_CHOICES, matte_video
 from .recipes.photo import PHOTO_ASPECTS, PHOTO_LOOKS, edit_photo, process_photo_batch
 from .recipes.proxy_preview import proxy_preview
+from .recipes.punch_zoom import punch_zoom
 from .recipes.punto_v23 import run_punto
 from .recipes.scale_plate import estimate_plate_scale
 from .recipes.sfx import SFX_KINDS, SfxCue, add_sfx
 from .recipes.silence_trim import trim_silence
+from .recipes.smart_reframe import VALID_RENAME_MODES, smart_reframe
 from .recipes.stems import AUDIO_FORMAT_CHOICES, TWO_STEMS_CHOICES, separate_stems
 from .recipes.subject_ground import ground_subject
 from .recipes.subtitles import generate_subtitles
@@ -326,6 +329,49 @@ def build_parser() -> argparse.ArgumentParser:
         "--at", type=float, default=0.0, help="Timestamp in seconds to play the SFX"
     )
     sfx_cmd.add_argument("--volume", type=float, default=1.0, help="Sound effect volume multiplier")
+
+    reframe_cmd = subcommands.add_parser(
+        "smart-reframe",
+        help="Intelligent vertical reframe with face/salience tracking or split-blur",
+    )
+    _add_io_arguments(reframe_cmd)
+    reframe_cmd.add_argument(
+        "--aspect", default="9:16", choices=list(ASPECT_RATIOS), help="Target aspect ratio"
+    )
+    reframe_cmd.add_argument(
+        "--mode", default="smart", choices=list(VALID_RENAME_MODES), help="Reframe mode"
+    )
+
+    zoom_cmd = subcommands.add_parser(
+        "punch-zoom",
+        help="Dynamic retention punch-in zoom (1.1x–1.25x) for video engagement",
+    )
+    _add_io_arguments(zoom_cmd)
+    zoom_cmd.add_argument(
+        "--auto-interval",
+        type=float,
+        default=5.0,
+        help="Rhythmic zoom interval in seconds (0 to disable auto)",
+    )
+    zoom_cmd.add_argument("--duration", type=float, default=2.0, help="Zoom duration in seconds")
+    zoom_cmd.add_argument(
+        "--scale", type=float, default=1.15, help="Zoom scale factor (e.g. 1.15 for 115%)"
+    )
+
+    broll_cmd = subcommands.add_parser(
+        "broll",
+        help="Overlay B-roll footage or stills preserving primary dialogue track (L/J-cut)",
+    )
+    _add_io_arguments(broll_cmd)
+    broll_cmd.add_argument("--clip", required=True, help="Path to B-roll video or image")
+    broll_cmd.add_argument("--start", type=float, default=0.0, help="Start timestamp in seconds")
+    broll_cmd.add_argument("--duration", type=float, default=3.0, help="B-roll duration in seconds")
+    broll_cmd.add_argument(
+        "--transition", default="cut", choices=["cut", "fade"], help="Cutaway transition style"
+    )
+    broll_cmd.add_argument(
+        "--volume", type=float, default=0.0, help="B-roll audio mix volume (0.0 = muted)"
+    )
 
     short = subcommands.add_parser("short", help="Export a vertical social clip")
     _add_io_arguments(short)
@@ -873,6 +919,59 @@ def _run_short(args: argparse.Namespace, config: Config, runner: KinoRunner) -> 
     return 0
 
 
+def _run_smart_reframe(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    result = smart_reframe(
+        args.input,
+        args.output,
+        config,
+        target_aspect=args.aspect,
+        mode=args.mode,
+        force=args.force,
+    )
+    print(f"smart-reframe written to {args.output}")
+    print(f"  aspect {result.target_aspect}, mode {result.mode}")
+    if result.crop_box:
+        print(f"  crop box: {result.crop_box}")
+    return 0
+
+
+def _run_punch_zoom(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    result = punch_zoom(
+        args.input,
+        args.output,
+        config,
+        auto_interval_s=args.auto_interval if args.auto_interval > 0 else None,
+        auto_zoom_duration_s=args.duration,
+        auto_scale=args.scale,
+        force=args.force,
+    )
+    print(f"punch-zoom written to {args.output}")
+    print(f"  cues applied: {result.cues_applied}")
+    return 0
+
+
+def _run_broll(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    cuts = [
+        BrollCut(
+            path=args.clip,
+            start_s=args.start,
+            duration_s=args.duration,
+            transition=args.transition,
+            volume=args.volume,
+        )
+    ]
+    result = insert_broll(
+        args.input,
+        args.output,
+        cuts,
+        config,
+        force=args.force,
+    )
+    print(f"broll written to {args.output}")
+    print(f"  cuts applied: {result.cuts_count}")
+    return 0
+
+
 HANDLERS = {
     "clean": _run_clean,
     "cutout": _run_cutout,
@@ -897,6 +996,9 @@ HANDLERS = {
     "audio-enhance": _run_audio_enhance,
     "cut-silence": _run_cut_silence,
     "sfx": _run_sfx,
+    "smart-reframe": _run_smart_reframe,
+    "punch-zoom": _run_punch_zoom,
+    "broll": _run_broll,
 }
 
 
