@@ -13,9 +13,11 @@ from .edit_spec import AudioEditSpec, EditSpec, SubtitleEditSpec, VideoEditSpec,
 from .errors import MediaLabError
 from .inspect import inspect_media
 from .kino import KinoRunner
+from .mcp_server import run_mcp_server
 from .ml_runner import MlRunner
 from .paths import clear_work_directory
 from .pipeline import run_pipeline
+from .prompt_agent import execute_prompt, plan_prompt
 from .recipes.audio_bed import add_music_bed
 from .recipes.audio_enhance import VOICE_PROFILES, enhance_audio
 from .recipes.backdrop import place_on_backdrop
@@ -427,6 +429,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--radiance", type=float, default=0.0, help="Skin radiance warmth [0.0, 1.0]"
     )
     retouch_cmd.add_argument("--mask", help="Optional silhouette mask for depth bokeh")
+
+    prompt_cmd = subcommands.add_parser(
+        "prompt",
+        help="Natural language autonomous editor (Romanian and English prompt-to-edit)",
+    )
+    prompt_cmd.add_argument("prompt", help="Natural language editing instructions")
+    prompt_cmd.add_argument("-i", "--input", required=True, help="Input media file path")
+    prompt_cmd.add_argument("-o", "--output", required=True, help="Output destination path")
+    prompt_cmd.add_argument(
+        "--plan-only", action="store_true", help="Print derived action plan without executing"
+    )
+    prompt_cmd.add_argument("--force", action="store_true", help="Overwrite existing output")
+
+    subcommands.add_parser(
+        "mcp",
+        help="Run native Model Context Protocol (MCP) server over stdio for AI integration",
+    )
 
     short = subcommands.add_parser("short", help="Export a vertical social clip")
     _add_io_arguments(short)
@@ -1091,6 +1110,34 @@ def _run_retouch(args: argparse.Namespace, config: Config, runner: KinoRunner) -
     return 0
 
 
+def _run_prompt(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    ml_runner = MlRunner.from_config(config)
+    if args.plan_only:
+        plan = plan_prompt(args.prompt, args.input, args.output)
+        print(f"Plan derived from: {args.prompt!r}")
+        for i, op in enumerate(plan.operations, start=1):
+            print(f"  {i}. {op}")
+        return 0
+
+    result = execute_prompt(
+        args.prompt,
+        args.input,
+        args.output,
+        config,
+        runner,
+        ml_runner,
+        force=args.force,
+    )
+    print(f"prompt executed -> {args.output}")
+    print(f"  steps executed: {', '.join(result.steps_executed)}")
+    return 0
+
+
+def _run_mcp(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    run_mcp_server(config)
+    return 0
+
+
 HANDLERS = {
     "clean": _run_clean,
     "cutout": _run_cutout,
@@ -1121,6 +1168,8 @@ HANDLERS = {
     "text-overlay": _run_text_overlay,
     "inpaint": _run_inpaint,
     "retouch": _run_retouch,
+    "prompt": _run_prompt,
+    "mcp": _run_mcp,
 }
 
 

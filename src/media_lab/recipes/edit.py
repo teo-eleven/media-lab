@@ -1,7 +1,9 @@
 """Declarative end-to-end editing recipe for video and photo assets.
 
 Takes a high-level EditSpec and orchestrates the complete chain of native recipes:
-speech cleaning -> visual looks -> reframing -> subtitles -> music bed mixing.
+silence trim -> vocal mastering -> visual looks -> smart reframe / short ->
+retention punch-zoom -> B-roll cutaways -> typography badges -> subtitles ->
+procedural sfx -> background music mixing with ducking.
 """
 
 from __future__ import annotations
@@ -19,11 +21,20 @@ from ..ml_runner import MlRunner
 from ..paths import ensure_readable_source, ensure_writable_output, work_directory
 from ..probe import MediaInfo, probe
 from ..recipes.audio_bed import add_music_bed
+from ..recipes.audio_enhance import enhance_audio
+from ..recipes.broll import BrollCut, insert_broll
+from ..recipes.face_retouch import retouch_portrait
 from ..recipes.filters import apply_look, apply_look_chain
+from ..recipes.inpainting import inpaint_image
 from ..recipes.photo import IMAGE_EXTENSIONS, edit_photo
+from ..recipes.punch_zoom import punch_zoom
+from ..recipes.sfx import SfxCue, add_sfx
+from ..recipes.silence_trim import trim_silence
+from ..recipes.smart_reframe import smart_reframe
 from ..recipes.stems import separate_stems
 from ..recipes.subtitles import generate_subtitles
 from ..recipes.to_short import to_short
+from ..recipes.typography import TypographyStyle, apply_typography
 from ..verify import Expectations, verify_render
 
 
@@ -62,22 +73,88 @@ def run_edit_spec(
     is_image = resolved_source.suffix.lower() in IMAGE_EXTENSIONS
 
     if is_image:
+        work = work_directory(config, "edit_photo_orchestrator")
+        current_img = resolved_source
+        photo_steps: list[str] = []
+
+        # 1. Inpainting if requested
+        if spec.photo.inpaint_bbox is not None:
+            inpainted_path = work / "step1_inpainted.png"
+            inpaint_image(
+                current_img,
+                inpainted_path,
+                config,
+                bbox=spec.photo.inpaint_bbox,
+                force=True,
+            )
+            current_img = inpainted_path
+            photo_steps.append("inpainting")
+
+        # 2. Retouching / skin smoothing / depth blur if requested
+        if spec.photo.retouch:
+            retouched_path = work / "step2_retouched.png"
+            retouch_portrait(
+                current_img,
+                retouched_path,
+                config,
+                smooth_skin=True,
+                skin_strength=spec.photo.skin_strength,
+                depth_blur=spec.photo.depth_blur,
+                blur_sigma=spec.photo.bokeh_sigma,
+                radiance=spec.photo.radiance,
+                force=True,
+            )
+            current_img = retouched_path
+            photo_steps.append("retouch")
+
+        # 3. Base photo edit (framing, backdrop, looks)
+        base_edit_path = work / "step3_base_edit.png"
         photo_res = edit_photo(
-            resolved_source,
-            resolved_output,
+            current_img,
+            base_edit_path,
             config,
             runner,
             aspect=spec.video.aspect,
             bg=spec.video.backdrop,
             cutout=spec.video.cutout,
             look=spec.video.look,
-            force=force,
+            force=True,
         )
-        media_info = probe(photo_res.output_path, config)
+        current_img = photo_res.output_path
+        photo_steps.append("photo_edit")
+
+        # 4. Typography badge overlay if requested
+        if spec.video.typography is not None:
+            typo_spec = spec.video.typography
+            t_style = TypographyStyle(
+                position=typo_spec.position,
+                font_size=typo_spec.font_size,
+                text_color=typo_spec.text_color,
+                badge=typo_spec.badge,
+            )
+            apply_typography(
+                current_img,
+                resolved_output,
+                typo_spec.text,
+                config,
+                style=t_style,
+                force=force,
+            )
+            photo_steps.append("typography")
+        else:
+            if current_img.suffix.lower() == resolved_output.suffix.lower():
+                shutil.copy2(current_img, resolved_output)
+            else:
+                from PIL import Image
+
+                with Image.open(current_img) as pil_img:
+                    pil_img.save(resolved_output)
+
+        media_info = probe(resolved_output, config)
         return EditResult(
-            output=photo_res.output_path,
+            output=resolved_output,
             media=media_info,
-            steps_executed=("photo_edit",),
+            steps_executed=tuple(photo_steps),
         )
 
     # Video workflow orchestration
@@ -85,10 +162,17 @@ def run_edit_spec(
     current_clip = resolved_source
     steps_executed: list[str] = []
 
-    # 1. Clean speech / audio stems
+    # 1. Silence Jump-Cutting
+    if spec.audio.silence_trim:
+        silence_video = work / "step1_silence_cut.mp4"
+        trim_silence(current_clip, silence_video, config, force=True)
+        current_clip = silence_video
+        steps_executed.append("silence_trim")
+
+    # 2. Clean speech / Demucs stems
     if spec.audio.clean_speech:
         stems_out_dir = work / "stems"
-        stems_video = work / "step1_clean_speech.mp4"
+        stems_video = work / "step2_clean_speech.mp4"
         separate_stems(
             current_clip,
             stems_out_dir,
@@ -101,9 +185,23 @@ def run_edit_spec(
         current_clip = stems_video
         steps_executed.append("clean_speech")
 
-    # 2. Visual looks & color grading
+    # 3. Vocal Mastering EQ / Compressor / Denoise
+    if spec.audio.master_profile:
+        mastered_video = work / "step3_audio_enhance.mp4"
+        enhance_audio(
+            current_clip,
+            mastered_video,
+            config,
+            profile=spec.audio.master_profile,
+            target_lufs=spec.audio.target_lufs,
+            force=True,
+        )
+        current_clip = mastered_video
+        steps_executed.append(f"audio_master_{spec.audio.master_profile}")
+
+    # 4. Visual looks & color grading
     if spec.video.look:
-        look_video = work / "step2_graded.mp4"
+        look_video = work / "step4_graded.mp4"
         if spec.video.second_look:
             apply_look_chain(
                 current_clip,
@@ -119,24 +217,90 @@ def run_edit_spec(
         current_clip = look_video
         steps_executed.append(f"look_{spec.video.look}")
 
-    # 3. Reframing / vertical social format
+    # 5. Reframing / vertical social format
     if spec.video.aspect != "original":
-        reframe_video = work / "step3_reframed.mp4"
-        to_short(
+        reframe_video = work / "step5_reframed.mp4"
+        if spec.video.smart_reframe:
+            smart_reframe(
+                current_clip,
+                reframe_video,
+                config,
+                target_aspect=spec.video.aspect,
+                mode=spec.video.reframe_mode,
+                force=True,
+            )
+            steps_executed.append(f"smart_reframe_{spec.video.aspect}")
+        else:
+            to_short(
+                current_clip,
+                reframe_video,
+                config,
+                runner,
+                aspect_ratio=spec.video.aspect,
+                thumbnail=False,
+                force=True,
+            )
+            steps_executed.append(f"reframe_{spec.video.aspect}")
+        current_clip = reframe_video
+
+    # 6. Retention Punch-in Zooms
+    if spec.video.punch_zoom:
+        zoom_video = work / "step6_zoomed.mp4"
+        punch_zoom(
             current_clip,
-            reframe_video,
+            zoom_video,
             config,
-            runner,
-            aspect_ratio=spec.video.aspect,
-            thumbnail=False,
+            auto_interval_s=spec.video.zoom_interval or 5.0,
             force=True,
         )
-        current_clip = reframe_video
-        steps_executed.append(f"reframe_{spec.video.aspect}")
+        current_clip = zoom_video
+        steps_executed.append("punch_zoom")
 
-    # 4. Whisper subtitles
+    # 7. B-roll cutaway inserts
+    if spec.video.broll_cuts:
+        broll_video = work / "step7_broll.mp4"
+        cuts = [
+            BrollCut(
+                path=c["path"],
+                start_s=float(c.get("start_s", 0.0)),
+                duration_s=float(c.get("duration_s", 3.0)),
+                transition=str(c.get("transition", "cut")),
+                volume=float(c.get("volume", 0.0)),
+            )
+            for c in spec.video.broll_cuts
+            if "path" in c
+        ]
+        if cuts:
+            insert_broll(current_clip, broll_video, cuts, config, force=True)
+            current_clip = broll_video
+            steps_executed.append(f"broll_{len(cuts)}_cuts")
+
+    # 8. Typography overlay badges
+    if spec.video.typography is not None:
+        typo_video = work / "step8_typography.mp4"
+        typo_spec = spec.video.typography
+        t_style = TypographyStyle(
+            position=typo_spec.position,
+            font_size=typo_spec.font_size,
+            text_color=typo_spec.text_color,
+            badge=typo_spec.badge,
+        )
+        apply_typography(
+            current_clip,
+            typo_video,
+            typo_spec.text,
+            config,
+            style=t_style,
+            start_s=typo_spec.start_s,
+            duration_s=typo_spec.duration_s,
+            force=True,
+        )
+        current_clip = typo_video
+        steps_executed.append("typography")
+
+    # 9. Whisper Subtitles
     if spec.video.subtitles.enabled:
-        subs_video = work / "step4_subtitled.mp4"
+        subs_video = work / "step9_subtitled.mp4"
         generate_subtitles(
             current_clip,
             subs_video,
@@ -150,7 +314,22 @@ def run_edit_spec(
         current_clip = subs_video
         steps_executed.append(f"subtitles_{spec.video.subtitles.style}")
 
-    # 5. Background music mixing with ducking
+    # 10. Procedural / custom SFX
+    if spec.audio.sfx_cues:
+        sfx_video = work / "step10_sfx.mp4"
+        sfx_cues = [
+            SfxCue(
+                kind=str(c.get("kind", "whoosh")),
+                at_s=float(c.get("at", 0.0)),
+                volume=float(c.get("volume", 1.0)),
+            )
+            for c in spec.audio.sfx_cues
+        ]
+        add_sfx(current_clip, sfx_video, config, sfx_cues, force=True)
+        current_clip = sfx_video
+        steps_executed.append(f"sfx_{len(sfx_cues)}_cues")
+
+    # 11. Background music mixing with ducking
     if spec.audio.music_track:
         add_music_bed(
             current_clip,
@@ -163,7 +342,7 @@ def run_edit_spec(
         )
         steps_executed.append("music_bed")
     else:
-        # Copy or remux to final destination
+        # Finalize output
         if current_clip.suffix.lower() == resolved_output.suffix.lower():
             shutil.copy2(current_clip, resolved_output)
         else:
@@ -176,7 +355,7 @@ def run_edit_spec(
     final_info = verify_render(
         resolved_output,
         config,
-        Expectations(duration_s=probe(resolved_source, config).duration_s),
+        Expectations(requires_video=True),
     )
 
     return EditResult(

@@ -70,6 +70,16 @@ def generate_auto_zoom_cues(
             )
         current_t += interval_s + actual_duration
 
+    if not cues and total_duration_s >= 0.8:
+        cue_dur = min(zoom_duration_s, total_duration_s * 0.5)
+        cues.append(
+            ZoomCue(
+                start_s=round(total_duration_s * 0.25, 2),
+                duration_s=round(cue_dur, 2),
+                scale=scale,
+            )
+        )
+
     return cues
 
 

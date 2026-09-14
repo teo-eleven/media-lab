@@ -1,7 +1,8 @@
 """Declarative edit specification parser and schema for autonomous video/photo editing.
 
-Allows human users or LLM agents to declare high-level editing intent:
-reframe, speech clean, look, subtitles, and music mix.
+Allows human users, LLM agents, or MCP clients to declare high-level editing intent:
+reframe, speech clean, audio mastering, silence jump-cut, visual looks, subtitles,
+punch-zoom, B-roll cutaways, typography cards, sound effects, and portrait retouching.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from typing import Any
 import yaml
 
 from .errors import ValidationError
+from .recipes.audio_enhance import VOICE_PROFILES
 from .recipes.filters import LOOKS
 from .subtitles import STYLE_CHOICES
 from .verify import ASPECT_RATIOS
@@ -23,9 +25,12 @@ SUPPORTED_ASPECTS = set(ASPECT_RATIOS) | {"original", "1:1", "4:5", "9:16", "16:
 @dataclass(frozen=True, slots=True)
 class AudioEditSpec:
     clean_speech: bool = False
+    master_profile: str | None = None
+    silence_trim: bool = False
     music_track: str | None = None
     target_lufs: float = -16.0
     music_volume: float = 1.0
+    sfx_cues: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,13 +41,40 @@ class SubtitleEditSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class TypographyEditSpec:
+    text: str
+    position: str = "bottom"
+    font_size: int = 44
+    text_color: str = "#FFFFFF"
+    badge: bool = True
+    start_s: float = 0.0
+    duration_s: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class VideoEditSpec:
     aspect: str = "original"
+    smart_reframe: bool = False
+    reframe_mode: str = "smart"
+    punch_zoom: bool = False
+    zoom_interval: float | None = None
+    broll_cuts: tuple[dict[str, Any], ...] = ()
     look: str | None = None
     second_look: str | None = None
     subtitles: SubtitleEditSpec = field(default_factory=SubtitleEditSpec)
+    typography: TypographyEditSpec | None = None
     cutout: bool = False
     backdrop: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PhotoEditSpec:
+    retouch: bool = False
+    skin_strength: float = 0.5
+    depth_blur: bool = False
+    bokeh_sigma: float = 12.0
+    radiance: float = 0.0
+    inpaint_bbox: tuple[int, int, int, int] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +83,7 @@ class EditSpec:
     output: str
     video: VideoEditSpec = field(default_factory=VideoEditSpec)
     audio: AudioEditSpec = field(default_factory=AudioEditSpec)
+    photo: PhotoEditSpec = field(default_factory=PhotoEditSpec)
 
 
 def parse_edit_spec(source: str | Path | dict[str, Any]) -> EditSpec:
@@ -112,11 +145,39 @@ def parse_edit_spec(source: str | Path | dict[str, Any]) -> EditSpec:
     else:
         sub_spec = SubtitleEditSpec(enabled=False)
 
+    typo_dict = video_dict.get("typography")
+    typo_spec: TypographyEditSpec | None = None
+    if isinstance(typo_dict, dict) and "text" in typo_dict:
+        typo_spec = TypographyEditSpec(
+            text=str(typo_dict["text"]),
+            position=str(typo_dict.get("position", "bottom")),
+            font_size=int(typo_dict.get("font_size", 44)),
+            text_color=str(typo_dict.get("text_color", "#FFFFFF")),
+            badge=bool(typo_dict.get("badge", True)),
+            start_s=float(typo_dict.get("start_s", 0.0)),
+            duration_s=(
+                float(typo_dict["duration_s"]) if typo_dict.get("duration_s") is not None else None
+            ),
+        )
+
+    broll_raw = video_dict.get("broll_cuts", ())
+    broll_tuple = tuple(broll_raw) if isinstance(broll_raw, (list, tuple)) else ()
+
     video_spec = VideoEditSpec(
         aspect=aspect,
+        smart_reframe=bool(video_dict.get("smart_reframe", False)),
+        reframe_mode=str(video_dict.get("reframe_mode", "smart")),
+        punch_zoom=bool(video_dict.get("punch_zoom", False)),
+        zoom_interval=(
+            float(video_dict["zoom_interval"])
+            if video_dict.get("zoom_interval") is not None
+            else None
+        ),
+        broll_cuts=broll_tuple,
         look=look,
         second_look=second_look,
         subtitles=sub_spec,
+        typography=typo_spec,
         cutout=bool(video_dict.get("cutout", False)),
         backdrop=video_dict.get("backdrop"),
     )
@@ -125,11 +186,41 @@ def parse_edit_spec(source: str | Path | dict[str, Any]) -> EditSpec:
     if not isinstance(audio_dict, dict):
         raise ValidationError("'audio' field must be a dictionary")
 
+    master_prof = audio_dict.get("master_profile")
+    if master_prof is not None and master_prof not in VOICE_PROFILES:
+        raise ValidationError(f"unsupported audio master_profile: {master_prof}")
+
+    sfx_raw = audio_dict.get("sfx_cues", ())
+    sfx_tuple = tuple(sfx_raw) if isinstance(sfx_raw, (list, tuple)) else ()
+
     audio_spec = AudioEditSpec(
         clean_speech=bool(audio_dict.get("clean_speech", False)),
+        master_profile=master_prof,
+        silence_trim=bool(audio_dict.get("silence_trim", False)),
         music_track=audio_dict.get("music_track") or audio_dict.get("track"),
         target_lufs=float(audio_dict.get("target_lufs", -16.0)),
         music_volume=float(audio_dict.get("music_volume", 1.0)),
+        sfx_cues=sfx_tuple,
+    )
+
+    photo_dict = raw.get("photo", {})
+    inpaint_raw = photo_dict.get("inpaint_bbox")
+    inpaint_tuple: tuple[int, int, int, int] | None = None
+    if isinstance(inpaint_raw, (list, tuple)) and len(inpaint_raw) == 4:
+        inpaint_tuple = (
+            int(inpaint_raw[0]),
+            int(inpaint_raw[1]),
+            int(inpaint_raw[2]),
+            int(inpaint_raw[3]),
+        )
+
+    photo_spec = PhotoEditSpec(
+        retouch=bool(photo_dict.get("retouch", False)),
+        skin_strength=float(photo_dict.get("skin_strength", 0.5)),
+        depth_blur=bool(photo_dict.get("depth_blur", False)),
+        bokeh_sigma=float(photo_dict.get("bokeh_sigma", 12.0)),
+        radiance=float(photo_dict.get("radiance", 0.0)),
+        inpaint_bbox=inpaint_tuple,
     )
 
     return EditSpec(
@@ -137,4 +228,5 @@ def parse_edit_spec(source: str | Path | dict[str, Any]) -> EditSpec:
         output=out_path,
         video=video_spec,
         audio=audio_spec,
+        photo=photo_spec,
     )

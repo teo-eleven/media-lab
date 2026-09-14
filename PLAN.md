@@ -534,7 +534,7 @@ Transformarea `media-lab` într-un agent complet capabil să execute orice edita
 
 ---
 
-### Pasul 4 — Zona 4: Prompt-to-Edit & MCP Server (`prompt_agent`, `mcp_server`, `edit_spec`)
+### Pasul 4 — Zona 4: Prompt-to-Edit & MCP Server (`prompt_agent`, `mcp_server`, `edit_spec`) — GATA
 - **Ce se face**:
   - `src/media_lab/prompt_agent.py`: Interpret inteligent de prompturi în limbaj natural (română și engleză) care traduce cererea utilizatorului în `EditSpec`.
   - Extindere `src/media_lab/edit_spec.py` și `src/media_lab/recipes/edit.py` pentru noile capabilități.
