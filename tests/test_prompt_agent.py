@@ -234,3 +234,48 @@ def test_chat_agent_conversational_flows(config: Config) -> None:
     assert res.output.is_file()
     assert res.media.has_video is True
     assert any("skipped" in step for step in res.steps_executed)
+
+
+def test_geometric_transforms_prompt(config: Config) -> None:
+    # 1. Test interpret_prompt with "pune solul cu sus in jos"
+    spec_vflip = interpret_prompt(
+        "pune solul cu susul in jos si oglindeste clipul",
+        "in/clip.mp4",
+        "out/flip.mp4",
+    )
+    assert spec_vflip.video.vflip is True
+    assert spec_vflip.video.hflip is True
+
+    # 2. Test rotate & invert colors & grayscale
+    spec_rot = interpret_prompt(
+        "roteste 90 grade, fa alb negru si negativ",
+        "in/clip.mp4",
+        "out/rot.mp4",
+    )
+    assert spec_rot.video.rotate == 90
+    assert spec_rot.video.grayscale is True
+    assert spec_rot.video.invert_colors is True
+
+    # 3. Test chat_agent planning for "pune solul cu sus in jos"
+    src = _generate_synthetic_video(config.in_dir / "geo_test.mp4", config, duration=1.0)
+    chat_vflip = chat_agent("pune solul cu sus in jos", src, config)
+    assert chat_vflip.intent == "plan"
+    assert chat_vflip.executable is True
+    assert any("vflip" in op.lower() for op in chat_vflip.plan_operations)
+
+    # 4. End-to-end execution of vflip
+    out_vflip = config.out_dir / "upside_down_render.mp4"
+    runner = KinoRunner.from_config(config)
+    ml_runner = MlRunner.from_config(config)
+    exec_res = execute_prompt(
+        "pune solul cu sus in jos",
+        src,
+        out_vflip,
+        config,
+        runner,
+        ml_runner,
+        force=True,
+    )
+    assert exec_res.output.is_file()
+    assert exec_res.media.has_video is True
+    assert "vflip" in exec_res.steps_executed

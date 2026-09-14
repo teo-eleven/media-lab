@@ -242,6 +242,68 @@ def interpret_prompt(
         "top" if (("sus" in p_lower or "top" in p_lower) and "bara" in p_lower) else "bottom"
     )
 
+    # 12. Geometric & Spatial Transforms (vflip, hflip, rotate, reverse, negate, grayscale)
+    vflip_triggers = (
+        "cu susul in jos",
+        "cu susul în jos",
+        "cu susu-n jos",
+        "sus in jos",
+        "sus în jos",
+        "solul cu susul in jos",
+        "solul cu susul în jos",
+        "solul cu sus in jos",
+        "solul cu sus în jos",
+        "solul sus",
+        "intoarce vertical",
+        "întoarce vertical",
+        "rasturnat",
+        "răsturnat",
+        "rastoarna",
+        "răstoarnă",
+        "flip vertical",
+        "vflip",
+        "upside down",
+        "pe dos",
+    )
+    vflip = any(k in p_lower for k in vflip_triggers)
+
+    hflip_triggers = (
+        "oglind",
+        "flip orizontal",
+        "hflip",
+        "mirror",
+        "horizontal flip",
+    )
+    hflip = any(k in p_lower for k in hflip_triggers)
+
+    rotate_deg = 0
+    if "180" in p_lower and any(k in p_lower for k in ("rot", "grade", "deg")):
+        rotate_deg = 180
+    elif "90" in p_lower and any(k in p_lower for k in ("rot", "grade", "deg")):
+        rotate_deg = 90
+    elif "270" in p_lower and any(k in p_lower for k in ("rot", "grade", "deg")):
+        rotate_deg = 270
+
+    invert_colors = any(
+        k in p_lower
+        for k in ("inversare culori", "culori inversate", "negativ", "negative", "invert colors")
+    )
+    grayscale = any(
+        k in p_lower for k in ("alb-negru", "alb negru", "grayscale", "monocrom", "black and white")
+    )
+    reverse_video = any(
+        k in p_lower
+        for k in (
+            "inapoi",
+            "înapoi",
+            "reverse",
+            "redare inversa",
+            "redare inversă",
+            "de la coada la cap",
+            "de la coadă la cap",
+        )
+    )
+
     video_spec = VideoEditSpec(
         aspect=aspect,
         smart_reframe=smart_reframe,
@@ -255,6 +317,12 @@ def interpret_prompt(
         progress_bar=has_progress_bar,
         progress_bar_color=pb_color,
         progress_bar_position=pb_position,
+        vflip=vflip,
+        hflip=hflip,
+        rotate=rotate_deg,
+        invert_colors=invert_colors,
+        grayscale=grayscale,
+        reverse=reverse_video,
     )
 
     audio_spec = AudioEditSpec(
@@ -270,6 +338,11 @@ def interpret_prompt(
         depth_blur=depth_blur,
         bokeh_sigma=bokeh_sigma,
         radiance=radiance,
+        vflip=vflip,
+        hflip=hflip,
+        rotate=rotate_deg,
+        invert_colors=invert_colors,
+        grayscale=grayscale,
     )
 
     return EditSpec(
@@ -294,6 +367,19 @@ def plan_prompt(prompt: str, source: str | Path, output: str | Path) -> PromptPl
         ops.append(f"Mastering audio vocal (profil {spec.audio.master_profile})")
     if spec.video.look:
         ops.append(f"Colorizare cinematică (look {spec.video.look})")
+    if spec.video.vflip or spec.photo.vflip:
+        ops.append("Răsturnare verticală (solul cu susul în jos / vflip)")
+    if spec.video.hflip or spec.photo.hflip:
+        ops.append("Oglindire orizontală (mirror / hflip)")
+    if spec.video.rotate or spec.photo.rotate:
+        deg = spec.video.rotate or spec.photo.rotate
+        ops.append(f"Rotire ({deg}°)")
+    if spec.video.invert_colors or spec.photo.invert_colors:
+        ops.append("Inversare culori (efect negativ)")
+    if spec.video.grayscale or spec.photo.grayscale:
+        ops.append("Conversie alb-negru (grayscale)")
+    if spec.video.reverse:
+        ops.append("Redare inversă (reverse video)")
     if spec.video.smart_reframe:
         ops.append(f"Reîncadrare inteligentă {spec.video.aspect} cu urmărire subiect")
     elif spec.video.aspect != "original":
@@ -607,8 +693,19 @@ def chat_agent(
         or plan.spec.video.typography is not None
         or plan.spec.video.progress_bar
         or plan.spec.video.speed != 1.0
+        or plan.spec.video.vflip
+        or plan.spec.video.hflip
+        or plan.spec.video.rotate != 0
+        or plan.spec.video.invert_colors
+        or plan.spec.video.grayscale
+        or plan.spec.video.reverse
         or plan.spec.photo.retouch
         or plan.spec.photo.depth_blur
+        or plan.spec.photo.vflip
+        or plan.spec.photo.hflip
+        or plan.spec.photo.rotate != 0
+        or plan.spec.photo.invert_colors
+        or plan.spec.photo.grayscale
         or bool(plan.spec.audio.sfx_cues)
         or plan.spec.audio.music_track is not None
     )

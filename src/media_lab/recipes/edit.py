@@ -125,6 +125,44 @@ def run_edit_spec(
         current_img = photo_res.output_path
         photo_steps.append("photo_edit")
 
+        # Geometric & spatial transforms for photo
+        photo_geo_filters: list[str] = []
+        if spec.photo.vflip:
+            photo_geo_filters.append("vflip")
+            photo_steps.append("vflip")
+        if spec.photo.hflip:
+            photo_geo_filters.append("hflip")
+            photo_steps.append("hflip")
+        if spec.photo.rotate == 90:
+            photo_geo_filters.append("transpose=1")
+            photo_steps.append("rotate_90")
+        elif spec.photo.rotate == 180:
+            photo_geo_filters.append("vflip,hflip")
+            photo_steps.append("rotate_180")
+        elif spec.photo.rotate == 270:
+            photo_geo_filters.append("transpose=2")
+            photo_steps.append("rotate_270")
+        if spec.photo.invert_colors:
+            photo_geo_filters.append("negate")
+            photo_steps.append("invert_colors")
+        if spec.photo.grayscale:
+            photo_geo_filters.append("hue=s=0")
+            photo_steps.append("grayscale")
+
+        if photo_geo_filters:
+            geo_photo_path = work / "step3b_photo_geometry.png"
+            run_ffmpeg(
+                [
+                    "-i",
+                    str(current_img),
+                    "-vf",
+                    ",".join(photo_geo_filters),
+                    str(geo_photo_path),
+                ],
+                config,
+            )
+            current_img = geo_photo_path
+
         # 4. Typography badge overlay if requested
         if spec.video.typography is not None:
             typo_spec = spec.video.typography
@@ -230,6 +268,45 @@ def run_edit_spec(
             apply_look(current_clip, look_video, spec.video.look, config, runner, force=True)
         current_clip = look_video
         steps_executed.append(f"look_{spec.video.look}")
+
+    # 4b. Geometric & Spatial Transforms (vflip, hflip, rotate, reverse, invert, grayscale)
+    geo_filters: list[str] = []
+    if spec.video.vflip:
+        geo_filters.append("vflip")
+        steps_executed.append("vflip")
+    if spec.video.hflip:
+        geo_filters.append("hflip")
+        steps_executed.append("hflip")
+    if spec.video.rotate == 90:
+        geo_filters.append("transpose=1")
+        steps_executed.append("rotate_90")
+    elif spec.video.rotate == 180:
+        geo_filters.append("vflip,hflip")
+        steps_executed.append("rotate_180")
+    elif spec.video.rotate == 270:
+        geo_filters.append("transpose=2")
+        steps_executed.append("rotate_270")
+    if spec.video.invert_colors:
+        geo_filters.append("negate")
+        steps_executed.append("invert_colors")
+    if spec.video.grayscale:
+        geo_filters.append("hue=s=0")
+        steps_executed.append("grayscale")
+    if spec.video.reverse:
+        geo_filters.append("reverse")
+        steps_executed.append("reverse_video")
+
+    if geo_filters:
+        geo_video = work / "step4b_geometry.mp4"
+        clip_info = probe(current_clip, config)
+        cmd = ["-i", str(current_clip), "-vf", ",".join(geo_filters)]
+        if spec.video.reverse and clip_info.has_audio:
+            cmd.extend(["-af", "areverse"])
+        elif clip_info.has_audio:
+            cmd.extend(["-c:a", "copy"])
+        cmd.extend(["-c:v", "libx264", "-pix_fmt", "yuv420p", str(geo_video)])
+        run_ffmpeg(cmd, config)
+        current_clip = geo_video
 
     # 5. Reframing / vertical social format
     if spec.video.aspect != "original":

@@ -69,6 +69,12 @@ class VideoEditSpec:
     progress_bar: bool = False
     progress_bar_color: str = "yellow"
     progress_bar_position: str = "bottom"
+    vflip: bool = False
+    hflip: bool = False
+    rotate: int = 0
+    invert_colors: bool = False
+    grayscale: bool = False
+    reverse: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +85,11 @@ class PhotoEditSpec:
     bokeh_sigma: float = 12.0
     radiance: float = 0.0
     inpaint_bbox: tuple[int, int, int, int] | None = None
+    vflip: bool = False
+    hflip: bool = False
+    rotate: int = 0
+    invert_colors: bool = False
+    grayscale: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,6 +199,12 @@ def parse_edit_spec(source: str | Path | dict[str, Any]) -> EditSpec:
         progress_bar=bool(video_dict.get("progress_bar", False)),
         progress_bar_color=str(video_dict.get("progress_bar_color", "yellow")),
         progress_bar_position=str(video_dict.get("progress_bar_position", "bottom")),
+        vflip=bool(video_dict.get("vflip", False)),
+        hflip=bool(video_dict.get("hflip", False)),
+        rotate=int(video_dict.get("rotate", 0)),
+        invert_colors=bool(video_dict.get("invert_colors", False)),
+        grayscale=bool(video_dict.get("grayscale", False)),
+        reverse=bool(video_dict.get("reverse", False)),
     )
 
     audio_dict = raw.get("audio", {})
@@ -229,6 +246,11 @@ def parse_edit_spec(source: str | Path | dict[str, Any]) -> EditSpec:
         bokeh_sigma=float(photo_dict.get("bokeh_sigma", 12.0)),
         radiance=float(photo_dict.get("radiance", 0.0)),
         inpaint_bbox=inpaint_tuple,
+        vflip=bool(photo_dict.get("vflip", False)),
+        hflip=bool(photo_dict.get("hflip", False)),
+        rotate=int(photo_dict.get("rotate", 0)),
+        invert_colors=bool(photo_dict.get("invert_colors", False)),
+        grayscale=bool(photo_dict.get("grayscale", False)),
     )
 
     return EditSpec(
