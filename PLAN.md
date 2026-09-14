@@ -328,7 +328,7 @@ robuste, testate și integrate în CLI.
 
 ## Pași de implementare
 
-### Pasul 1 — `upscale` (Real-ESRGAN native recipe + CLI)
+### Pasul 1 — `upscale` (Real-ESRGAN native recipe + CLI) — GATA (b1304a0)
 - **Ce se adaugă**:
   - `src/media_lab/ml/realesrgan_infer.py`: driver ML dedicat rulat ca subprocess prin `ml_runner` (pentru menținerea graniței de proces și izolarea memoriei); suportă `--scale` (2, 4), `tile`, `tile_pad`, device auto MPS/CPU; scalează canalele RGB cu RealESRGAN și canalul alpha cu Lanczos; procesează secvențe PNG.
   - `src/media_lab/recipes/upscale.py`: rețetă tipizată `upscale_frames` / `upscale` cu suport pentru secvențe PNG sau ProRes 4444 `.mov`, verificare căi, protecție `--force`.
@@ -343,7 +343,7 @@ robuste, testate și integrate în CLI.
 
 ---
 
-### Pasul 2 — `subject-ground` (Foot pin, zoom-normalisation, contact shadow, canvas placement)
+### Pasul 2 — `subject-ground` (Foot pin, zoom-normalisation, contact shadow, canvas placement) — GATA (1210686)
 - **Ce se adaugă**:
   - `src/media_lab/grounding.py`: modul pur de calcul geometric și grafic:
     - Detecție puncte de contact picioare (pe baza pragului de alpha, centroid X al benzii inferioare).
@@ -362,7 +362,7 @@ robuste, testate și integrate în CLI.
 
 ---
 
-### Pasul 3 — `scale-from-plate` (Calcul scară și poziție sol din referință)
+### Pasul 3 — `scale-from-plate` (Calcul scară și poziție sol din referință) — GATA (6716243)
 - **Ce se adaugă**:
   - `src/media_lab/scale_plate.py`: funcții pure pentru calculul scării subiectului și al liniei de sol pe baza unei persoane de referință din background plate sau a unei înălțimi țintă în pixeli la coordonata Y dată.
   - `src/media_lab/recipes/scale_plate.py` + CLI `media-lab scale-plate`: calculează parametrii optimi de scalare și poziționare pentru `ground_subject`.
@@ -376,7 +376,7 @@ robuste, testate și integrate în CLI.
 
 ---
 
-### Pasul 4 — `colour-match` (Transfer statistic Lab + relight scenic directional/bounce)
+### Pasul 4 — `colour-match` (Transfer statistic Lab + relight scenic directional/bounce) — GATA (26e7e4c)
 - **Ce se adaugă**:
   - `src/media_lab/colour_transfer.py`: modul pur de procesare coloristică:
     - Transfer statistic Reinhard în spațiul Lab (aliniere medie și deviație standard între regiunea de fundal și subiect).
@@ -396,7 +396,7 @@ robuste, testate și integrate în CLI.
 
 ---
 
-### Pasul 5 — Refactorizarea runner-ului `punto` (eliminare scripturi legacy & staging improvizat)
+### Pasul 5 — Refactorizarea runner-ului `punto` (eliminare scripturi legacy & staging improvizat) — GATA (3132c0b)
 - **Ce se adaugă**:
   - Modificare `src/media_lab/recipes/punto_v23.py`:
     - Înlocuirea apelurilor către `docs/video-agent/pipeline/upscale_realesrgan.py` cu `recipes.upscale`.
@@ -411,15 +411,16 @@ robuste, testate și integrate în CLI.
 
 ---
 
-### Pasul 6 — Verificare completă, documentație și sincronizare
+### Pasul 6 — Verificare completă, documentație și sincronizare — GATA
 - **Ce se adaugă**:
   - Actualizare `README.md` (noile comenzi CLI, exemple de utilizare).
   - Actualizare `DECISIONS.md` cu deciziile luate.
-  - Arhivarea notată a scripturilor din `docs/video-agent/pipeline/` ca superseded.
+  - Arhivarea notată a scripturilor din `docs/video-agent/pipeline/` ca superseded de noile comenzi native.
   - Rularea tuturor verificărilor de calitate: `make lint` (`ruff`), `make typecheck` (`mypy` strict), `make test` (toată suita `pytest` verde cu coverage ≥ 80%).
 - **Fișiere atinse**:
   - `README.md`
   - `DECISIONS.md`
   - `PLAN.md` (bifare pași finalizați)
+  - `docs/video-agent/README.md`
 - **Depinde de**: Pașii 1–5.
 

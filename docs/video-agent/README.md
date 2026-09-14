@@ -33,21 +33,22 @@ compose_pipeline.sh
   └─ encode: libx264 High, crf 17-18, +faststart, 30fps native
 ```
 
-Every stage is a small standalone script. `compose_pipeline.sh` is a captured v23
-run, kept as a record.
+Every stage was originally a small standalone script in `pipeline/`. Those scripts are kept as historical/reference records, but are now superseded by native recipes.
 
-**Phase 1 replaces the ends of that chain with typed `media-lab` commands** (see
-`PLAN.md`):
+**Phase 1 & Phase 2 replace the entire chain with typed `media-lab` commands** (see `PLAN.md`):
 
+```sh
+media-lab matte        in/punto-source.mp4 -o work/m.mov                # matte_rvm.py productised
+media-lab upscale      work/m.mov -o work/m-up.mov --scale 2            # upscale_realesrgan.py productised
+media-lab scale-plate  work/m-up.mov --ref-height 480 --ref-ground 3560 # plate scale estimation
+media-lab colour-match work/m-up.mov -o work/relit.mov --bg in/bg.mp4   # Reinhard Lab + directional relight
+media-lab ground       work/relit.mov -o work/placed.mov --ground-y 3560# place_composite.py productised
+media-lab compose      docs/video-agent/punto-v23.yaml -o out/x.mp4     # compose_pipeline.sh productised
+media-lab proxy        out/x.mp4 --compare out/prev.mp4                 # fast preview + contact sheet
+media-lab punto        -o out/punto.mp4 [--proxy]                       # the whole chain, one command
 ```
-media-lab matte   in/punto-source.mp4 -o work/m.mov      # matte_rvm.py, productised
-                  (upscale_realesrgan.py + place_composite.py stay as-is)
-media-lab compose docs/video-agent/punto-v23.yaml -o out/x.mp4   # compose_pipeline.sh, productised
-media-lab proxy   out/x.mp4 --compare out/prev.mp4        # fast preview + contact sheet
-media-lab punto   -o out/punto.mp4 [--proxy]             # the whole chain, one command
-```
 
-`matte` and `punto` need `./scripts/fetch-rvm.sh` first.
+`matte` and `punto` need `./scripts/fetch-rvm.sh` first; `upscale` requires Real-ESRGAN weights.
 
 ---
 

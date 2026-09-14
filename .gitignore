@@ -22,3 +22,7 @@ tools/
 in/
 out/
 work/
+
+# OS
+.DS_Store
+

@@ -18,14 +18,18 @@ probed and checked against what was asked for.
 | `media-lab cutout`   | Cut a person out of a still or video, keeping alpha                    |
 | `media-lab matte`    | Matte a person out of a video with RVM (ProRes 4444 + flicker score)   |
 | `media-lab backdrop` | Composite a cutout onto a new image or video backdrop                  |
-| `media-lab compose`  | Render a shot from a compose-spec YAML (bg, subject, occlusion, grade) |
-| `media-lab filter`   | Apply one of ten named looks, or chain two                             |
-| `media-lab proxy`    | Fast low-res proxy + contact sheet of a render, optional side-by-side  |
-| `media-lab music`    | Mix a music bed under the voice with sidechain ducking                 |
-| `media-lab short`    | Reframe to 9:16 (or another ratio), export, quality-gate, thumbnail    |
-| `media-lab pipeline` | Run the whole edit in one pass                                         |
-| `media-lab punto`    | Reproduce the punto v23 render through matte/compose/proxy             |
-| `media-lab clean`    | Empty `work/` (add `--dry-run` to preview first)                       |
+| `media-lab upscale`      | Upscale video or PNG sequence with Real-ESRGAN (x2/x4, alpha-aware)    |
+| `media-lab ground`       | Place cutout on canvas with foot-pinning and 3-layer contact shadow    |
+| `media-lab scale-plate`  | Calculate scale factor and ground line from plate reference person    |
+| `media-lab colour-match` | Transfer colour mood (Reinhard Lab) and apply directional relighting   |
+| `media-lab compose`      | Render a shot from a compose-spec YAML (bg, subject, occlusion, grade) |
+| `media-lab filter`       | Apply one of ten named looks, or chain two                             |
+| `media-lab proxy`        | Fast low-res proxy + contact sheet of a render, optional side-by-side  |
+| `media-lab music`        | Mix a music bed under the voice with sidechain ducking                 |
+| `media-lab short`        | Reframe to 9:16 (or another ratio), export, quality-gate, thumbnail    |
+| `media-lab pipeline`     | Run the whole edit in one pass                                         |
+| `media-lab punto`        | Reproduce the punto v23 render through matte/compose/proxy             |
+| `media-lab clean`        | Empty `work/` (add `--dry-run` to preview first)                       |
 
 Available looks: `warm`, `cool`, `vintage`, `cinematic`, `noir`, `vignette`,
 `glow`, `grain`, `vibrant`, `punchy`.
@@ -78,6 +82,15 @@ uv run media-lab backdrop out/cutout.webm --bg in/bg.png -o out/composed.mp4
 uv run media-lab filter   out/composed.mp4 --look warm --then grain -o out/graded.mp4
 uv run media-lab music    out/graded.mp4 --track in/song.mp3 -o out/mixed.mp4
 uv run media-lab short    out/mixed.mp4 -o out/final.mp4
+
+# video-agent compositing workflow (Phase 1 & Phase 2)
+uv run media-lab matte    in/clip.mp4 -o work/matte.mov
+uv run media-lab upscale  work/matte.mov -o work/matte-up.mov --scale 2
+uv run media-lab scale-plate work/matte-up.mov --ref-height 480 --ref-ground 3560
+uv run media-lab colour-match work/matte-up.mov -o work/relit.mov --bg in/bg.mp4
+uv run media-lab ground   work/relit.mov -o work/placed.mov --ground-y 3560
+uv run media-lab compose  work/shot.yaml -o out/final.mp4
+uv run media-lab proxy    out/final.mp4 --compare out/prev.mp4
 ```
 
 The pipeline runs: cutout, backdrop, look, restore the voice the compositor

@@ -5,6 +5,29 @@ Newest first.
 
 ---
 
+## 2026-09-14 — Phase 2: modular upscale, Reinhard colour-match, foot-pinning grounding replace legacy scripts
+
+**Context.** Phase 1 staged frames around `docs/video-agent/pipeline/upscale_realesrgan.py`
+and `place_composite.py` via ad-hoc directory moves (`isnet/up/` -> `rvm_up/`). The scripts
+had hardcoded paths and rigid configurations.
+
+**Chosen.** Folded all logic into four typed, modular, tested tools:
+1. `recipes/upscale.py` + `ml/realesrgan_infer.py`: Real-ESRGAN running as a subprocess
+   via `ml_runner`, alpha upscaled with Lanczos, supporting arbitrary directories and video files.
+2. `colour_transfer.py` + `recipes/colour_match.py`: Reinhard statistical colour transfer in
+   decorrelated Lab space + scene directional lighting and ground bounce.
+3. `grounding.py` + `recipes/subject_ground.py`: Foot contact point detection, silhouette base
+   locking (foot-pinning), zoom normalisation, and 3-layer directional contact shadow rendering.
+4. `scale_plate.py` + `recipes/scale_plate.py`: Analytical scale and ground line estimation from
+   background plate reference persons.
+
+The `punto` runner now calls these native recipes directly, eliminating all directory-move hacks.
+
+**Trade-off accepted.** More source files to maintain, but zero hardcoded workspace paths,
+fully isolated ML boundaries, full unit test coverage, and reusable CLI tools.
+
+---
+
 ## 2026-09-09 — compose-spec renders in one fused ffmpeg pass
 
 **Context.** The v23 `compose_pipeline.sh` was three ffmpeg invocations with
