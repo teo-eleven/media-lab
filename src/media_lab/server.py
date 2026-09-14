@@ -270,13 +270,20 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
                     self.ml_runner,
                     force=True,
                 )
+                skipped_audio = [s for s in result.steps_executed if "skipped" in s]
+                note = ""
+                if skipped_audio:
+                    note = (
+                        "\n\n> ℹ️ **Notă:** Fișierul sursă nu are pistă audio. "
+                        "Etapele vocale au fost omise, iar efectele video au fost aplicate."
+                    )
                 self._send_json_response(
                     {
                         "status": "ok",
                         "reply": (
                             f"🎉 **Randare completată cu succes!**\n\n"
                             f"Noul fișier a fost salvat în `{result.output.name}` "
-                            f"și a parcurs {len(result.steps_executed)} etape de procesare."
+                            f"și a parcurs {len(result.steps_executed)} etape de procesare.{note}"
                         ),
                         "output": str(result.output.name),
                         "steps": list(result.steps_executed),

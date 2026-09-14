@@ -184,3 +184,53 @@ def test_chat_agent_conversational_flows(config: Config) -> None:
     assert plan_res.intent == "plan"
     assert plan_res.executable is True
     assert len(plan_res.plan_operations) >= 2
+
+    # 8. Silent video: only audio operations requested
+    silent_src = _generate_synthetic_video(config.in_dir / "chat_silent.mp4", config, duration=1.0)
+    # Strip audio stream with ffmpeg
+    subprocess.run(
+        [
+            str(config.ffmpeg),
+            "-y",
+            "-i",
+            str(silent_src),
+            "-c:v",
+            "copy",
+            "-an",
+            str(config.in_dir / "chat_no_audio.mp4"),
+        ],
+        check=True,
+    )
+    no_audio_file = config.in_dir / "chat_no_audio.mp4"
+
+    silent_audio_only = chat_agent("curata vocea si taie pauzele", no_audio_file, config)
+    assert silent_audio_only.intent == "clarification"
+    assert silent_audio_only.executable is False
+    assert "nu conține o pistă audio" in silent_audio_only.reply
+
+    # 9. Silent video: video + audio operations requested
+    silent_combo = chat_agent(
+        "fa un short vertical 9:16 cu zoom dinamic, curata vocea si taie pauzele",
+        no_audio_file,
+        config,
+    )
+    assert silent_combo.intent == "plan"
+    assert silent_combo.executable is True
+    assert any("omis" in op for op in silent_combo.plan_operations)
+
+    # 10. Execute prompt on silent video end-to-end (must NOT crash)
+    out_silent = config.out_dir / "silent_render_test.mp4"
+    runner = KinoRunner.from_config(config)
+    ml_runner = MlRunner.from_config(config)
+    res = execute_prompt(
+        "fa un short vertical 9:16 cu zoom dinamic, curata vocea si taie pauzele",
+        no_audio_file,
+        out_silent,
+        config,
+        runner,
+        ml_runner,
+        force=True,
+    )
+    assert res.output.is_file()
+    assert res.media.has_video is True
+    assert any("skipped" in step for step in res.steps_executed)

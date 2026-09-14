@@ -592,17 +592,76 @@ def chat_agent(
             executable=False,
         )
 
+    # Check for silent input media
+    is_silent = source_info is not None and not source_info.has_audio
+    has_audio_ops = (
+        plan.spec.audio.silence_trim
+        or plan.spec.audio.clean_speech
+        or bool(plan.spec.audio.master_profile)
+        or plan.spec.video.subtitles.enabled
+    )
+    has_visual_ops = (
+        plan.spec.video.aspect != "original"
+        or plan.spec.video.look is not None
+        or plan.spec.video.punch_zoom
+        or plan.spec.video.typography is not None
+        or plan.spec.video.progress_bar
+        or plan.spec.video.speed != 1.0
+        or plan.spec.photo.retouch
+        or plan.spec.photo.depth_blur
+        or bool(plan.spec.audio.sfx_cues)
+        or plan.spec.audio.music_track is not None
+    )
+
+    if is_silent and has_audio_ops and not has_visual_ops:
+        s_name = source_path.name if source_path else "Clipul"
+        return ChatResponse(
+            reply=(
+                f"⚠️ Fișierul `{s_name}` **nu conține o pistă audio**.\n\n"
+                "Operațiunile vocale cerute (curățare voce, tăiere silențiu, subtitrări) "
+                "nu pot fi aplicate unui clip fără sunet.\n\n"
+                "Alege o transformare video (decupare 9:16, zoom, titlu grafic, bară progres) "
+                "sau selectează un clip cu sunet din lista din stânga!"
+            ),
+            intent="clarification",
+            suggested_prompts=(
+                f"Fă un short 9:16 din {s_name} cu zoom dinamic",
+                f"Adaugă o bară animată de progres galbenă pe {s_name}",
+                f"Aplică look cinematic și titlu 'Video' pe {s_name}",
+            ),
+            plan_operations=(),
+            spec=plan.spec,
+            executable=False,
+        )
+
     # If operations are found, build a rich, personalized production plan
-    ops_md = "\n".join(f"- **{i + 1}.** {op}" for i, op in enumerate(plan.operations))
+    final_ops: list[str] = []
+    for op in plan.operations:
+        if is_silent and any(
+            k in op.lower() for k in ("pauze", "silențiu", "vocal", "demucs", "subtitrări")
+        ):
+            final_ops.append(f"{op} *(omis - fișier fără audio)*")
+        else:
+            final_ops.append(op)
+
+    ops_md = "\n".join(f"- **{i + 1}.** {op}" for i, op in enumerate(final_ops))
+    note = ""
+    if is_silent and has_audio_ops:
+        f_name = source_path.name if source_path else "selectat"
+        note = (
+            f"\n\n> ⚠️ **Notă:** Fișierul `{f_name}` nu are pistă audio. "
+            "Etapele vocale vor fi omise automat, iar efectele video vor fi aplicate."
+        )
+
     reply = (
         f"🎬 **Am configurat planul de producție pentru cererea ta:**\n\n"
-        f"{ops_md}\n\n"
+        f"{ops_md}{note}\n\n"
         "Parametrii au fost validați. Apasă butonul de mai jos pentru a lansa randarea!"
     )
     return ChatResponse(
         reply=reply,
         intent="plan",
-        plan_operations=plan.operations,
+        plan_operations=tuple(final_ops),
         suggested_prompts=(),
         spec=plan.spec,
         executable=True,

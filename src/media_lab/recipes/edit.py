@@ -166,40 +166,52 @@ def run_edit_spec(
 
     # 1. Silence Jump-Cutting
     if spec.audio.silence_trim:
-        silence_video = work / "step1_silence_cut.mp4"
-        trim_silence(current_clip, silence_video, config, force=True)
-        current_clip = silence_video
-        steps_executed.append("silence_trim")
+        clip_info = probe(current_clip, config)
+        if clip_info.has_audio:
+            silence_video = work / "step1_silence_cut.mp4"
+            trim_silence(current_clip, silence_video, config, force=True)
+            current_clip = silence_video
+            steps_executed.append("silence_trim")
+        else:
+            steps_executed.append("silence_trim_skipped (no audio)")
 
     # 2. Clean speech / Demucs stems
     if spec.audio.clean_speech:
-        stems_out_dir = work / "stems"
-        stems_video = work / "step2_clean_speech.mp4"
-        separate_stems(
-            current_clip,
-            stems_out_dir,
-            config,
-            ml_runner,
-            clean_speech=True,
-            output_video=stems_video,
-            force=True,
-        )
-        current_clip = stems_video
-        steps_executed.append("clean_speech")
+        clip_info = probe(current_clip, config)
+        if clip_info.has_audio:
+            stems_out_dir = work / "stems"
+            stems_video = work / "step2_clean_speech.mp4"
+            separate_stems(
+                current_clip,
+                stems_out_dir,
+                config,
+                ml_runner,
+                clean_speech=True,
+                output_video=stems_video,
+                force=True,
+            )
+            current_clip = stems_video
+            steps_executed.append("clean_speech")
+        else:
+            steps_executed.append("clean_speech_skipped (no audio)")
 
     # 3. Vocal Mastering EQ / Compressor / Denoise
     if spec.audio.master_profile:
-        mastered_video = work / "step3_audio_enhance.mp4"
-        enhance_audio(
-            current_clip,
-            mastered_video,
-            config,
-            profile=spec.audio.master_profile,
-            target_lufs=spec.audio.target_lufs,
-            force=True,
-        )
-        current_clip = mastered_video
-        steps_executed.append(f"audio_master_{spec.audio.master_profile}")
+        clip_info = probe(current_clip, config)
+        if clip_info.has_audio:
+            mastered_video = work / "step3_audio_enhance.mp4"
+            enhance_audio(
+                current_clip,
+                mastered_video,
+                config,
+                profile=spec.audio.master_profile,
+                target_lufs=spec.audio.target_lufs,
+                force=True,
+            )
+            current_clip = mastered_video
+            steps_executed.append(f"audio_master_{spec.audio.master_profile}")
+        else:
+            steps_executed.append(f"audio_master_{spec.audio.master_profile}_skipped (no audio)")
 
     # 4. Visual looks & color grading
     if spec.video.look:
@@ -302,19 +314,23 @@ def run_edit_spec(
 
     # 9. Whisper Subtitles
     if spec.video.subtitles.enabled:
-        subs_video = work / "step9_subtitled.mp4"
-        generate_subtitles(
-            current_clip,
-            subs_video,
-            config,
-            ml_runner,
-            style=spec.video.subtitles.style,
-            language=spec.video.subtitles.language,
-            burn=True,
-            force=True,
-        )
-        current_clip = subs_video
-        steps_executed.append(f"subtitles_{spec.video.subtitles.style}")
+        clip_info = probe(current_clip, config)
+        if clip_info.has_audio:
+            subs_video = work / "step9_subtitled.mp4"
+            generate_subtitles(
+                current_clip,
+                subs_video,
+                config,
+                ml_runner,
+                style=spec.video.subtitles.style,
+                language=spec.video.subtitles.language,
+                burn=True,
+                force=True,
+            )
+            current_clip = subs_video
+            steps_executed.append(f"subtitles_{spec.video.subtitles.style}")
+        else:
+            steps_executed.append("subtitles_skipped (no audio)")
 
     # 10. Procedural / custom SFX
     if spec.audio.sfx_cues:
