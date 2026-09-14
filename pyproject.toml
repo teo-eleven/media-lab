@@ -42,9 +42,10 @@ select = ["E", "F", "I", "B", "UP", "SIM", "RET"]
 python_version = "3.12"
 strict = true
 files = ["src", "tests"]
-# rvm_infer.py runs as a subprocess in a context that has torch + the RVM
-# checkout on sys.path; it is not part of the typed library surface.
-exclude = ["src/media_lab/ml/rvm_infer\\.py$"]
+# ML infer scripts run as subprocesses in an environment with torch + heavy
+# dependencies on sys.path; they are not part of the typed library surface.
+exclude = ["src/media_lab/ml/.*_infer\\.py$"]
+
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

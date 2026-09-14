@@ -18,8 +18,10 @@ def check_range(value: float, low: float, high: float, label: str) -> float:
     return value
 
 
-def check_choice(value: str, allowed: Sequence[str], label: str) -> str:
-    """Confirm a string is one of a fixed set."""
+def check_choice[T](value: T, allowed: Sequence[T], label: str) -> T:
+    """Confirm a value is one of a fixed set."""
     if value not in allowed:
-        raise ValidationError(f"{label} must be one of {', '.join(allowed)}, got {value!r}")
+        options = ", ".join(str(x) for x in allowed)
+        raise ValidationError(f"{label} must be one of {options}, got {value!r}")
     return value
+

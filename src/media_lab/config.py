@@ -21,10 +21,11 @@ MIN_KINO_TIMEOUT_S = 1
 REQUIRED_BINARIES = ("ffmpeg", "ffprobe")
 # RVM (Robust Video Matting) is a GPL-3 source checkout, never committed, and
 # its weights are large binary files. Neither is validated at startup - only
-# `matte-video` needs them, through require_ml() below.
 DEFAULT_RVM_REPO = "./tools/RobustVideoMatting"
 DEFAULT_WEIGHTS_DIR = "./work/punto-edit/gen/weights"
 RVM_WEIGHT_FILES = {"resnet50": "rvm_resnet50.pth", "mobilenetv3": "rvm_mobilenetv3.pth"}
+REALESRGAN_WEIGHT_FILES = {2: "RealESRGAN_x2plus.pth", 4: "RealESRGAN_x4plus.pth"}
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,3 +201,26 @@ def require_ml(config: Config, *, model: str | None = None) -> None:
             f"{listed}\n"
             "Run ./scripts/fetch-rvm.sh, then download the weights it prints."
         )
+
+
+def require_realesrgan(config: Config, *, scale: int = 2) -> Path:
+    """Assert Real-ESRGAN weight file exists, or raise MlEnvError.
+
+    Returns the resolved path to the model weights file.
+    """
+    if scale not in REALESRGAN_WEIGHT_FILES:
+        allowed = sorted(REALESRGAN_WEIGHT_FILES)
+        raise MlEnvError(f"unsupported upscale scale {scale}; expected one of {allowed}")
+    if not config.weights_dir.is_dir():
+        raise MlEnvError(
+            f"weights directory not found at {config.weights_dir}.\n"
+            "Create it and download the Real-ESRGAN weights."
+        )
+    weight_file = config.weights_dir / REALESRGAN_WEIGHT_FILES[scale]
+    if not weight_file.is_file():
+        raise MlEnvError(
+            f"Real-ESRGAN weight file not found at {weight_file}.\n"
+            f"Expected {REALESRGAN_WEIGHT_FILES[scale]} under {config.weights_dir}."
+        )
+    return weight_file
+

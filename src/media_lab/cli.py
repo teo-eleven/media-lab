@@ -21,6 +21,7 @@ from .recipes.matte_video import MODEL_CHOICES, matte_video
 from .recipes.proxy_preview import proxy_preview
 from .recipes.punto_v23 import run_punto
 from .recipes.to_short import to_short
+from .recipes.upscale import upscale
 from .verify import ASPECT_RATIOS
 
 RESIZE_QUALITY_CHOICES = ("low", "medium", "high", "ultra")
@@ -54,6 +55,14 @@ def build_parser() -> argparse.ArgumentParser:
     matte = subcommands.add_parser("matte", help="Matte a person out of a video with RVM")
     _add_io_arguments(matte)
     matte.add_argument("--model", choices=MODEL_CHOICES, default="resnet50")
+
+    upscale_cmd = subcommands.add_parser(
+        "upscale", help="Upscale a video or PNG frame sequence with Real-ESRGAN"
+    )
+    _add_io_arguments(upscale_cmd)
+    upscale_cmd.add_argument("--scale", type=int, choices=[2, 4], default=2, help="Upscale factor")
+    upscale_cmd.add_argument("--tile", type=int, default=512, help="Tile size (0 for no tiling)")
+    upscale_cmd.add_argument("--fps", type=float, help="Override framerate")
 
     backdrop = subcommands.add_parser("backdrop", help="Composite a cutout onto a backdrop")
     _add_io_arguments(backdrop)
@@ -203,6 +212,23 @@ def _run_matte(args: argparse.Namespace, config: Config, _runner: KinoRunner) ->
     print(f"  alpha spread {result.alpha_spread}/255 (0 would mean nothing was separated)")
     print(f"  stability score {result.stability_score:.2f} (lower = less flicker)")
     return 0
+
+
+def _run_upscale(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    result = upscale(
+        args.input,
+        args.output,
+        config,
+        MlRunner.from_config(config),
+        scale=args.scale,
+        tile=args.tile,
+        fps=args.fps,
+        force=args.force,
+    )
+    print(f"upscale written to {result.output}")
+    print(f"  scale {result.scale}x, {result.frames} frames")
+    return 0
+
 
 
 def _run_backdrop(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
@@ -359,6 +385,7 @@ HANDLERS = {
     "clean": _run_clean,
     "cutout": _run_cutout,
     "matte": _run_matte,
+    "upscale": _run_upscale,
     "backdrop": _run_backdrop,
     "filter": _run_filter,
     "compose": _run_compose,
