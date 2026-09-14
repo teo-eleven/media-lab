@@ -20,6 +20,7 @@ from .recipes.filters import LOOKS, apply_look, apply_look_chain
 from .recipes.matte_video import MODEL_CHOICES, matte_video
 from .recipes.proxy_preview import proxy_preview
 from .recipes.punto_v23 import run_punto
+from .recipes.subject_ground import ground_subject
 from .recipes.to_short import to_short
 from .recipes.upscale import upscale
 from .verify import ASPECT_RATIOS
@@ -63,6 +64,30 @@ def build_parser() -> argparse.ArgumentParser:
     upscale_cmd.add_argument("--scale", type=int, choices=[2, 4], default=2, help="Upscale factor")
     upscale_cmd.add_argument("--tile", type=int, default=512, help="Tile size (0 for no tiling)")
     upscale_cmd.add_argument("--fps", type=float, help="Override framerate")
+
+    ground_cmd = subcommands.add_parser(
+        "ground",
+        help="Ground and position subject onto canvas with foot-locking and shadow",
+    )
+    _add_io_arguments(ground_cmd)
+    ground_cmd.add_argument("--canvas-width", type=int, default=2160, help="Canvas width")
+    ground_cmd.add_argument("--canvas-height", type=int, default=3840, help="Canvas height")
+    ground_cmd.add_argument("--ground-y", type=int, default=3560, help="Ground contact line Y")
+    ground_cmd.add_argument("--dx", type=int, default=0, help="Horizontal offset from center")
+    ground_cmd.add_argument("--scale", type=float, default=1.0, help="Base subject scale")
+    ground_cmd.add_argument(
+        "--no-shadow", dest="enable_shadow", action="store_false", help="Disable contact shadow"
+    )
+    ground_cmd.add_argument(
+        "--shadow-opacity", type=float, default=1.0, help="Shadow opacity (0-1)"
+    )
+    ground_cmd.add_argument(
+        "--no-zoom-norm",
+        dest="zoom_normalise",
+        action="store_false",
+        help="Disable zoom normalisation",
+    )
+    ground_cmd.add_argument("--fps", type=float, help="Framerate override")
 
     backdrop = subcommands.add_parser("backdrop", help="Composite a cutout onto a backdrop")
     _add_io_arguments(backdrop)
@@ -230,6 +255,30 @@ def _run_upscale(args: argparse.Namespace, config: Config, _runner: KinoRunner) 
     return 0
 
 
+def _run_ground(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    result = ground_subject(
+        args.input,
+        args.output,
+        config,
+        canvas=(args.canvas_width, args.canvas_height),
+        ground_y=args.ground_y,
+        dx=args.dx,
+        base_scale=args.scale,
+        enable_shadow=args.enable_shadow,
+        shadow_opacity=args.shadow_opacity,
+        zoom_normalise=args.zoom_normalise,
+        fps=args.fps,
+        force=args.force,
+    )
+    print(f"grounded subject written to {result.output}")
+    print(
+        f"  canvas {result.canvas[0]}x{result.canvas[1]}, "
+        f"ground Y {result.ground_y}, {result.frames} frames"
+    )
+    return 0
+
+
+
 
 def _run_backdrop(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
     result = place_on_backdrop(
@@ -386,6 +435,7 @@ HANDLERS = {
     "cutout": _run_cutout,
     "matte": _run_matte,
     "upscale": _run_upscale,
+    "ground": _run_ground,
     "backdrop": _run_backdrop,
     "filter": _run_filter,
     "compose": _run_compose,
