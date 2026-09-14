@@ -25,8 +25,10 @@ from .recipes.punto_v23 import run_punto
 from .recipes.scale_plate import estimate_plate_scale
 from .recipes.stems import AUDIO_FORMAT_CHOICES, TWO_STEMS_CHOICES, separate_stems
 from .recipes.subject_ground import ground_subject
+from .recipes.subtitles import generate_subtitles
 from .recipes.to_short import to_short
 from .recipes.upscale import upscale
+from .subtitles import STYLE_CHOICES
 from .verify import ASPECT_RATIOS
 
 RESIZE_QUALITY_CHOICES = ("low", "medium", "high", "ultra")
@@ -163,6 +165,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="Custom destination for cleaned video if --clean-speech is set",
     )
     stems_cmd.add_argument(
+        "--force", action="store_true", help="Overwrite existing output files"
+    )
+
+    subs_cmd = subcommands.add_parser(
+        "subtitles",
+        help="Transcribe audio and generate or burn styled subtitles (TikTok, clean, box)",
+    )
+    subs_cmd.add_argument("input", help="Source audio or video file")
+    subs_cmd.add_argument(
+        "-o", "--output", required=True, help="Destination subtitle (.ass/.srt) or video (.mp4)"
+    )
+    subs_cmd.add_argument(
+        "--style",
+        default="tiktok",
+        choices=list(STYLE_CHOICES),
+        help="Subtitle styling preset (default: tiktok)",
+    )
+    subs_cmd.add_argument("--model", default="base", help="Whisper model name (default: base)")
+    subs_cmd.add_argument("--language", help="Language code (e.g. en, ro, es)")
+    subs_cmd.add_argument(
+        "--burn",
+        action="store_true",
+        help="Burn subtitles into video (automatic if -o ends in .mp4/.mov)",
+    )
+    subs_cmd.add_argument(
+        "--save-subs",
+        help="Also save subtitle file (.ass or .srt) when burning to video",
+    )
+    subs_cmd.add_argument(
         "--force", action="store_true", help="Overwrite existing output files"
     )
 
@@ -418,6 +449,26 @@ def _run_stems(args: argparse.Namespace, config: Config, _runner: KinoRunner) ->
     return 0
 
 
+def _run_subtitles(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    result = generate_subtitles(
+        args.input,
+        args.output,
+        config,
+        MlRunner.from_config(config),
+        style=args.style,
+        model=args.model,
+        language=args.language,
+        burn=args.burn,
+        output_subs=args.save_subs,
+        force=args.force,
+    )
+    print(f"subtitles generated ({result.language}, {result.segment_count} segments):")
+    print(f"  subtitle file: {result.subtitle_file}")
+    if result.video_file is not None:
+        print(f"  burned video:  {result.video_file}")
+    return 0
+
+
 def _run_backdrop(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
     result = place_on_backdrop(
         args.input,
@@ -577,6 +628,7 @@ HANDLERS = {
     "scale-plate": _run_scale_plate,
     "colour-match": _run_colour_match,
     "stems": _run_stems,
+    "subtitles": _run_subtitles,
     "backdrop": _run_backdrop,
     "filter": _run_filter,
     "compose": _run_compose,

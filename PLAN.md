@@ -446,7 +446,7 @@ orchestrare declarativă prompt-to-edit).
 
 ---
 
-### Pasul 2 — `subtitles` (Whisper speech-to-text + social subtitle styling/burning)
+### Pasul 2 — `subtitles` (Whisper speech-to-text + social subtitle styling/burning) — GATA
 - **Ce se adaugă**:
   - `src/media_lab/ml/whisper_infer.py`: driver ML pentru Whisper local (`openai-whisper`), exportă segmente JSON cu timestamp-uri și cuvinte.
   - `src/media_lab/subtitles.py`: generator avansat de fișiere ASS / SRT cu preseturi social media:
