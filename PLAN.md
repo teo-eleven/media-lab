@@ -550,4 +550,45 @@ Transformarea `media-lab` într-un agent complet capabil să execute orice edita
 - Documentare completată în `README.md` și `DECISIONS.md`.
 - Sincronizare și push pe git pe branch-ul `feat/video-agent-phase2`.
 
+---
+
+# FAZA 5 — Studio 360° & Interfață Web Chat Locală
+
+Completarea ultimelor superputeri de studio (asamblare multi-clip cu tranziții cinematice, speed ramping cu conservarea pitch-ului, bare dinamice de retenție social media, sincronizare pe ritm muzical și narator local offline TTS) și crearea unei interfețe web chat interactive cu player video integrat (`media-lab studio`).
+
+## Pași de implementare
+
+### Pasul 1 — Motorul de Montaj Studio 360° — GATA
+- `src/media_lab/recipes/assembly.py`: Asamblare N-clipuri cu tranziții `xfade` (`fade`, `wipeleft`, `wiperight`, `dissolve`, `fadeblack` etc.) și `acrossfade` audio.
+- `src/media_lab/recipes/speed.py`: Modificare viteză (0.1x–10.0x) cu recalculare `setpts` și lanț `atempo`.
+- `src/media_lab/recipes/progress_bar.py`: Bară animată de retenție social media prin overlay dinamic continuu.
+- `src/media_lab/recipes/beat_sync.py`: Detecție de ritm și tranzienți audio pentru alinierea tăieturilor.
+- `src/media_lab/recipes/narrator.py`: Text-to-speech local offline cu voce română și engleză.
+- Comenzi CLI: `media-lab assemble`, `media-lab speed`, `media-lab progress-bar`, `media-lab beat-sync`, `media-lab narrate`.
+
+---
+
+### Pasul 2 — Extindere EditSpec & Prompt Agent — GATA
+- Adăugare parametri noi în `EditSpec`: `speed`, `progress_bar`, `progress_bar_color`, `progress_bar_position`.
+- Învățare comenzi noi în `prompt_agent.py` (recunoaștere viteză / slow motion / timelapse, culori și poziții bară retenție).
+- Conectare în `recipes/edit.py` și expunere în MCP Server.
+
+---
+
+### Pasul 3 — Interfața Web Locală (Studio Chat & Player UI) — GATA
+- `src/media_lab/server.py`: Server HTTP local pur Python (`media-lab studio` la `http://localhost:8765`).
+- Suport complet HTTP Range requests (RFC 7233) pentru streaming fluid video/audio și scrub în playerul HTML5.
+- Protecție path traversal (`is_relative_to`), validare origini și căi permise.
+- Interfață SPA Dark-mode (Apple/Studio style): explorer fișiere `in/`/`out/`/`work/`, chat interactiv cu agentul, player video integrat, statistici media, igienizare DOM XSS.
+
+---
+
+### Pasul 4 — Teste, Verificare `make check`, Documentație și Push — GATA
+- Teste unitare și de integrare în `tests/test_studio_360.py` și `tests/test_server.py`.
+- Verificare completă: `make check` (0 linter errors, strict mypy 0 issues, pytest 330+ teste trecute, acoperire $\ge 80\%$).
+- Audit de cod și securitate integrat complet; aplicate toate remediile de securitate și fiabilitate.
+- Documentare în `README.md` și `DECISIONS.md`.
+- Sincronizare și push pe git pe branch-ul `feat/video-agent-phase2`.
+
+
 

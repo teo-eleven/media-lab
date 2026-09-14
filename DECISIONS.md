@@ -3,6 +3,28 @@
 Technical decisions taken on this project, with the trade-off each one accepts.
 Newest first.
 
+## 2026-09-14 — Phase 5: Studio 360° Superpowers & Local Web Studio UI (Multi-Clip Assembly, Speed Ramping, Retention Progress Bar, Beat Sync, Local Narrator, and Real-Time Chat UI)
+
+**Context.** Transforming Media Lab into a complete 360° Studio required:
+1. Multi-clip timeline assembly with transition effects and seamless audio crossfades.
+2. Motion dynamics / speed ramping (slow-motion / timelapse) with pitch-preserved audio.
+3. Dynamic social retention progress bar (sliding animated bar for TikTok/Reels/Shorts).
+4. Audio rhythm and beat detection (BPM and transient onsets) for musical cuts.
+5. Local offline text-to-speech voiceover narration with native Romanian and English voices.
+6. A local Web Studio interface with an interactive chat UI, HTML5 media player with HTTP 206 streaming, and real-time execution of automated editing pipelines.
+
+**Chosen.**
+1. `recipes/assembly.py`: Chained FFmpeg `xfade` (15 cinematic transition modes) with recursive cumulative offset calculation $\text{offset}_k = \text{offset}_{k-1} + d_{k-1} - \delta$, coupled with equal-power `acrossfade` audio transitions and pre-normalization to unified resolution, 30fps, SAR 1:1, and YUV420p.
+2. `recipes/speed.py`: Exact timestamp scaling via `setpts=(1.0/speed)*(PTS-STARTPTS)` paired with dynamic factorization of arbitrary speeds into chained FFmpeg `atempo` filters bounded strictly to $[0.5, 2.0]$.
+3. `recipes/progress_bar.py`: Dynamic sliding overlay pattern (`min(0, -w+w*(t/dur))`) over a static semi-transparent track, ensuring frame-accurate continuous filling without disappearing after clip duration.
+4. `recipes/beat_sync.py`: Offline audio transient energy flux calculation and derivative peak picking with moving-window tempo estimation, exporting beat timestamps and BPM.
+5. `recipes/narrator.py`: macOS native speech synthesis (`/usr/bin/say`) with Romanian 'Ioana' and English voices, audio mix attenuation compensation (`weights=1 1:normalize=0`), and timeline muxing with `-shortest` defense.
+6. `server.py` + `static/index.html`: Zero-dependency, pure Python `http.server.ThreadingHTTPServer` implementing RFC 7233 byte-range streaming for seamless video seeking, path traversal defense via `is_relative_to()`, DOM XSS prevention, and a dark-mode studio interface.
+
+**Trade-off accepted.** Using Python's standard library for the Web Studio avoids adding heavy web framework dependencies (FastAPI/Flask/Starlette/Node/React), keeping the application lightweight, standalone, and completely offline on macOS Apple Silicon.
+
+---
+
 ## 2026-09-14 — Phase 4: Omnichannel Autonomous Studio (Audio Mastering, Silence Trim, SFX, Smart Reframe, Punch Zoom, B-Roll, Typography, Inpainting, Face Retouch, Natural Language Prompt Agent, and MCP Server)
 
 **Context.** Creating an end-to-end autonomous media creation suite required extending beyond basic cutting to full-studio creative capabilities:

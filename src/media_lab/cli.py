@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -18,9 +19,11 @@ from .ml_runner import MlRunner
 from .paths import clear_work_directory
 from .pipeline import run_pipeline
 from .prompt_agent import execute_prompt, plan_prompt
+from .recipes.assembly import VALID_TRANSITIONS, assemble_clips
 from .recipes.audio_bed import add_music_bed
 from .recipes.audio_enhance import VOICE_PROFILES, enhance_audio
 from .recipes.backdrop import place_on_backdrop
+from .recipes.beat_sync import detect_beats
 from .recipes.broll import BrollCut, insert_broll
 from .recipes.colour_match import colour_match
 from .recipes.compose_spec import compose
@@ -30,7 +33,9 @@ from .recipes.face_retouch import retouch_portrait
 from .recipes.filters import LOOKS, apply_look, apply_look_chain
 from .recipes.inpainting import inpaint_image
 from .recipes.matte_video import MODEL_CHOICES, matte_video
+from .recipes.narrator import generate_narration
 from .recipes.photo import PHOTO_ASPECTS, PHOTO_LOOKS, edit_photo, process_photo_batch
+from .recipes.progress_bar import add_progress_bar
 from .recipes.proxy_preview import proxy_preview
 from .recipes.punch_zoom import punch_zoom
 from .recipes.punto_v23 import run_punto
@@ -38,12 +43,14 @@ from .recipes.scale_plate import estimate_plate_scale
 from .recipes.sfx import SFX_KINDS, SfxCue, add_sfx
 from .recipes.silence_trim import trim_silence
 from .recipes.smart_reframe import VALID_REFRAME_MODES, smart_reframe
+from .recipes.speed import change_speed
 from .recipes.stems import AUDIO_FORMAT_CHOICES, TWO_STEMS_CHOICES, separate_stems
 from .recipes.subject_ground import ground_subject
 from .recipes.subtitles import generate_subtitles
 from .recipes.to_short import to_short
 from .recipes.typography import VALID_POSITIONS, TypographyStyle, apply_typography
 from .recipes.upscale import upscale
+from .server import run_studio
 from .subtitles import STYLE_CHOICES
 from .verify import ASPECT_RATIOS
 
@@ -463,6 +470,83 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands.add_parser(
         "mcp",
         help="Run native Model Context Protocol (MCP) server over stdio for AI integration",
+    )
+
+    assemble_cmd = subcommands.add_parser(
+        "assemble",
+        help="Multi-clip timeline assembly with smooth xfade transitions and audio crossfade",
+    )
+    assemble_cmd.add_argument("sources", nargs="+", help="Input clip files to concatenate")
+    assemble_cmd.add_argument("-o", "--output", required=True, help="Destination video file")
+    assemble_cmd.add_argument(
+        "--transition", default="fade", choices=list(VALID_TRANSITIONS), help="Transition type"
+    )
+    assemble_cmd.add_argument(
+        "--duration", type=float, default=0.75, help="Transition overlap duration in seconds"
+    )
+    assemble_cmd.add_argument(
+        "--aspect", default="16:9", choices=list(ASPECT_RATIOS), help="Target aspect ratio"
+    )
+    assemble_cmd.add_argument(
+        "-f", "--force", action="store_true", help="Overwrite existing output"
+    )
+
+    speed_cmd = subcommands.add_parser(
+        "speed",
+        help="Speed ramping (slow-mo / timelapse) with pitch-preserved audio",
+    )
+    _add_io_arguments(speed_cmd)
+    speed_cmd.add_argument(
+        "--speed",
+        type=float,
+        default=1.0,
+        help="Speed multiplier (e.g. 0.5 for 2x slow-mo, 2.0 for 2x timelapse)",
+    )
+
+    pb_cmd = subcommands.add_parser(
+        "progress-bar",
+        help="Animated social retention progress bar for Reels / Shorts / TikTok",
+    )
+    _add_io_arguments(pb_cmd)
+    pb_cmd.add_argument(
+        "--position", default="bottom", choices=["bottom", "top"], help="Bar position"
+    )
+    pb_cmd.add_argument("--height", type=int, default=6, help="Bar thickness in pixels")
+    pb_cmd.add_argument("--color", default="yellow", help="Bar color name or hex code")
+
+    beat_cmd = subcommands.add_parser(
+        "beat-sync",
+        help="Detect audio rhythm, BPM and transient beats for musical editing",
+    )
+    beat_cmd.add_argument("source", help="Audio or video file with sound")
+    beat_cmd.add_argument("--json", action="store_true", help="Output JSON result")
+
+    narrate_cmd = subcommands.add_parser(
+        "narrate",
+        help="Generate local offline text-to-speech voiceover and optionally attach to video",
+    )
+    narrate_cmd.add_argument("text", help="Text to speak")
+    narrate_cmd.add_argument(
+        "-o", "--output", required=True, help="Destination audio or video file"
+    )
+    narrate_cmd.add_argument("--voice", help="Voice name (e.g. 'Ioana', 'Daniel', 'Samantha')")
+    narrate_cmd.add_argument(
+        "--rate", type=int, default=175, help="Speaking rate in words per minute"
+    )
+    narrate_cmd.add_argument("--video", help="Optional video file to attach narration to")
+    narrate_cmd.add_argument(
+        "--start", type=float, default=0.0, help="Start offset in seconds on video timeline"
+    )
+    narrate_cmd.add_argument("-f", "--force", action="store_true", help="Overwrite existing output")
+
+    studio_cmd = subcommands.add_parser(
+        "studio",
+        help="Launch local interactive Web Studio with Chat UI and media player",
+    )
+    studio_cmd.add_argument("--host", default="127.0.0.1", help="Host binding IP")
+    studio_cmd.add_argument("--port", type=int, default=8765, help="Port binding")
+    studio_cmd.add_argument(
+        "--no-browser", action="store_true", help="Do not open browser automatically"
     )
 
     short = subcommands.add_parser("short", help="Export a vertical social clip")
@@ -1197,6 +1281,95 @@ def _run_mcp(args: argparse.Namespace, config: Config, runner: KinoRunner) -> in
     return 0
 
 
+def _run_assemble(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    result = assemble_clips(
+        args.sources,
+        args.output,
+        config,
+        transition=args.transition,
+        transition_duration_s=args.duration,
+        aspect=args.aspect,
+        force=args.force,
+    )
+    print(f"assembled {result.clips_count} clips -> {args.output} ({result.total_duration_s}s)")
+    print(f"  transition: {result.transition}")
+    return 0
+
+
+def _run_speed(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    result = change_speed(
+        args.input,
+        args.output,
+        config,
+        speed=args.speed,
+        force=args.force,
+    )
+    print(f"speed modified -> {args.output} ({result.speed_factor}x)")
+    print(f"  duration: {result.original_duration_s}s -> {result.new_duration_s}s")
+    return 0
+
+
+def _run_progress_bar(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    result = add_progress_bar(
+        args.input,
+        args.output,
+        config,
+        position=args.position,
+        height=args.height,
+        color=args.color,
+        force=args.force,
+    )
+    print(f"progress-bar rendered -> {args.output}")
+    print(f"  position: {result.position}, height: {result.height}px, color: {result.color}")
+    return 0
+
+
+def _run_beat_sync(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    result = detect_beats(args.source, config)
+    if args.json:
+        payload = {
+            "source": str(result.source),
+            "total_beats": result.total_beats,
+            "estimated_bpm": result.estimated_bpm,
+            "duration_s": result.duration_s,
+            "beats_s": list(result.beats_s),
+        }
+        print(json.dumps(payload, indent=2))
+    else:
+        bpm_str = f"{result.estimated_bpm} BPM" if result.estimated_bpm else "N/A"
+        print(f"beat-sync detected {result.total_beats} beats in {args.source} ({bpm_str})")
+        if result.beats_s:
+            sample_beats = ", ".join(f"{b:.2f}s" for b in result.beats_s[:8])
+            print(f"  sample beats: {sample_beats}...")
+    return 0
+
+
+def _run_narrate(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    result = generate_narration(
+        args.text,
+        args.output,
+        config,
+        voice=args.voice,
+        rate_wpm=args.rate,
+        video_source=args.video,
+        start_s=args.start,
+        force=args.force,
+    )
+    print(f"narration generated -> {args.output} ({result.duration_s}s)")
+    print(f"  voice: {result.voice}, text: {result.text!r}")
+    return 0
+
+
+def _run_studio(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    run_studio(
+        config,
+        host=args.host,
+        port=args.port,
+        open_browser=not args.no_browser,
+    )
+    return 0
+
+
 HANDLERS = {
     "clean": _run_clean,
     "cutout": _run_cutout,
@@ -1229,6 +1402,12 @@ HANDLERS = {
     "retouch": _run_retouch,
     "prompt": _run_prompt,
     "mcp": _run_mcp,
+    "assemble": _run_assemble,
+    "speed": _run_speed,
+    "progress-bar": _run_progress_bar,
+    "beat-sync": _run_beat_sync,
+    "narrate": _run_narrate,
+    "studio": _run_studio,
 }
 
 

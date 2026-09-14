@@ -27,10 +27,12 @@ from ..recipes.face_retouch import retouch_portrait
 from ..recipes.filters import apply_look, apply_look_chain
 from ..recipes.inpainting import inpaint_image
 from ..recipes.photo import IMAGE_EXTENSIONS, edit_photo
+from ..recipes.progress_bar import add_progress_bar
 from ..recipes.punch_zoom import punch_zoom
 from ..recipes.sfx import SfxCue, add_sfx
 from ..recipes.silence_trim import trim_silence
 from ..recipes.smart_reframe import smart_reframe
+from ..recipes.speed import change_speed
 from ..recipes.stems import separate_stems
 from ..recipes.subtitles import generate_subtitles
 from ..recipes.to_short import to_short
@@ -329,7 +331,28 @@ def run_edit_spec(
         current_clip = sfx_video
         steps_executed.append(f"sfx_{len(sfx_cues)}_cues")
 
-    # 11. Background music mixing with ducking
+    # 11. Speed ramping
+    if spec.video.speed != 1.0:
+        speed_video = work / "step11_speed.mp4"
+        change_speed(current_clip, speed_video, config, speed=spec.video.speed, force=True)
+        current_clip = speed_video
+        steps_executed.append(f"speed_{spec.video.speed}x")
+
+    # 12. Social retention progress bar
+    if spec.video.progress_bar:
+        pb_video = work / "step12_progress_bar.mp4"
+        add_progress_bar(
+            current_clip,
+            pb_video,
+            config,
+            position=spec.video.progress_bar_position,
+            color=spec.video.progress_bar_color,
+            force=True,
+        )
+        current_clip = pb_video
+        steps_executed.append("progress_bar")
+
+    # 13. Background music mixing with ducking
     if spec.audio.music_track:
         add_music_bed(
             current_clip,

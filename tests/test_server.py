@@ -1,0 +1,136 @@
+"""Tests for the local Media Lab Studio Web server."""
+
+from __future__ import annotations
+
+import json
+import threading
+import urllib.request
+from pathlib import Path
+
+import pytest
+
+from media_lab.config import Config
+from media_lab.ffmpeg import run_ffmpeg
+from media_lab.kino import KinoRunner
+from media_lab.ml_runner import MlRunner
+from media_lab.server import create_server
+
+
+def _generate_synthetic_video(path: Path, config: Config) -> Path:
+    cmd = [
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=black:s=160x120:r=25:d=1.0",
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=440:duration=1.0",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        str(path),
+    ]
+    run_ffmpeg(cmd, config)
+    return path
+
+
+def test_studio_server_endpoints(config: Config) -> None:
+    src_file = _generate_synthetic_video(config.in_dir / "test_server_src.mp4", config)
+
+    runner = KinoRunner.from_config(config)
+    ml_runner = MlRunner.from_config(config)
+    server = create_server(config, runner, ml_runner, host="127.0.0.1", port=0)
+    port = server.server_address[1]
+
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    base_url = f"http://127.0.0.1:{port}"
+
+    try:
+        # 1. Test GET / (HTML UI)
+        with urllib.request.urlopen(f"{base_url}/") as resp:
+            assert resp.status == 200
+            html = resp.read().decode("utf-8")
+            assert "<!DOCTYPE html>" in html
+            assert "Media Lab Studio" in html
+
+        # 2. Test GET /api/files (JSON file tree)
+        with urllib.request.urlopen(f"{base_url}/api/files") as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode("utf-8"))
+            assert "in" in data
+            assert "out" in data
+            assert any(f["name"] == "test_server_src.mp4" for f in data["in"])
+
+        # 3. Test GET /media/in/test_server_src.mp4 (media streaming with Range)
+        req = urllib.request.Request(f"{base_url}/media/in/test_server_src.mp4")
+        req.add_header("Range", "bytes=0-100")
+        with urllib.request.urlopen(req) as resp:
+            assert resp.status == 206
+            assert resp.headers.get("Content-Range") is not None
+            chunk = resp.read()
+            assert len(chunk) == 101
+
+        # 4. Test POST /api/prompt with plan_only
+        post_data = json.dumps(
+            {
+                "prompt": "Fa un short vertical cu subtitrari galbene",
+                "input": f"in/{src_file.name}",
+                "plan_only": True,
+            }
+        ).encode("utf-8")
+        req_post = urllib.request.Request(
+            f"{base_url}/api/prompt",
+            data=post_data,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req_post) as resp:
+            assert resp.status == 200
+            res_data = json.loads(resp.read().decode("utf-8"))
+            assert "operations" in res_data
+            assert len(res_data["operations"]) > 0
+
+        # 5. Security Test: Path traversal defense
+        try:
+            req_trav = urllib.request.Request(f"{base_url}/media/in/../../etc/passwd")
+            urllib.request.urlopen(req_trav)
+            pytest.fail("Should have failed path traversal")
+        except urllib.error.HTTPError as err:
+            assert err.code in (400, 403, 404)
+
+        # 6. Security Test: RFC 7233 Range Not Satisfiable (416)
+        try:
+            req_oor = urllib.request.Request(f"{base_url}/media/in/test_server_src.mp4")
+            req_oor.add_header("Range", "bytes=999999-1000000")
+            urllib.request.urlopen(req_oor)
+            pytest.fail("Should have failed with 416")
+        except urllib.error.HTTPError as err:
+            assert err.code == 416
+
+        # 7. Security Test: API input path outside allowed roots
+        post_bad = json.dumps(
+            {
+                "prompt": "Test edit",
+                "input": "/etc/passwd",
+                "plan_only": True,
+            }
+        ).encode("utf-8")
+        req_bad = urllib.request.Request(
+            f"{base_url}/api/prompt",
+            data=post_bad,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            urllib.request.urlopen(req_bad)
+            pytest.fail("Should have rejected outside path with 403")
+        except urllib.error.HTTPError as err:
+            assert err.code == 403
+
+    finally:
+        server.shutdown()
+        server.server_close()

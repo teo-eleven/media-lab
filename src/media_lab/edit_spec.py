@@ -65,6 +65,10 @@ class VideoEditSpec:
     typography: TypographyEditSpec | None = None
     cutout: bool = False
     backdrop: str | None = None
+    speed: float = 1.0
+    progress_bar: bool = False
+    progress_bar_color: str = "yellow"
+    progress_bar_position: str = "bottom"
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,6 +184,10 @@ def parse_edit_spec(source: str | Path | dict[str, Any]) -> EditSpec:
         typography=typo_spec,
         cutout=bool(video_dict.get("cutout", False)),
         backdrop=video_dict.get("backdrop"),
+        speed=float(video_dict.get("speed", 1.0)),
+        progress_bar=bool(video_dict.get("progress_bar", False)),
+        progress_bar_color=str(video_dict.get("progress_bar_color", "yellow")),
+        progress_bar_position=str(video_dict.get("progress_bar_position", "bottom")),
     )
 
     audio_dict = raw.get("audio", {})

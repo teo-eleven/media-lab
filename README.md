@@ -41,6 +41,12 @@ probed and checked against what was asked for.
 | `media-lab text-overlay` | Styled typography title badge and lower-thirds with pill background    |
 | `media-lab inpaint`      | Content-aware object/blemish erasing (Telea / Navier-Stokes)           |
 | `media-lab retouch`      | Portrait retouching: skin smoothing and bokeh depth-of-field blur      |
+| `media-lab assemble`     | Multi-clip timeline assembly with xfade transitions & acrossfade audio |
+| `media-lab speed`        | Motion speed ramping (0.1x–10.0x) with pitch-preserved chained atempo  |
+| `media-lab progress-bar` | Social retention progress bar (sliding overlay with customizable color)|
+| `media-lab beat-sync`    | Musical audio rhythm & transient onset analysis (BPM + beat timestamps)|
+| `media-lab narrate`      | Local offline TTS voiceover (macOS Romanian & English) + timeline mux  |
+| `media-lab studio`       | Local Web Studio UI: interactive dark-mode chat + HTML5 media player   |
 | `media-lab prompt`       | Autonomous agent: prompt-to-edit in natural language (RO & EN)         |
 | `media-lab mcp`          | Model Context Protocol (MCP) server over stdio for AI assistant pairing|
 | `media-lab pipeline`     | Run the whole edit in one pass                                         |
@@ -146,6 +152,15 @@ uv run media-lab retouch      in/portrait.jpg -o out/glow.jpg --smooth 0.6 --dep
 uv run media-lab prompt in/vlog.mp4 -o out/viral.mp4 -p "transforma in short 9:16 cu subtitrari galbene, curata vocea, scoate pauzele si pune titlul 'Podcast #1' sus"
 uv run media-lab prompt in/vlog.mp4 -p "make it a reel with tiktok subtitles and whoosh sound effect" --dry-run
 uv run media-lab mcp
+
+# 5. Studio 360° Superpowers & Web Studio Chat UI
+uv run media-lab assemble in/intro.mp4 in/body.mp4 in/outro.mp4 -o out/assembled.mp4 --transition wipeleft
+uv run media-lab speed in/clip.mp4 -o out/slowmo.mp4 --speed 0.5
+uv run media-lab speed in/clip.mp4 -o out/timelapse.mp4 --speed 2.5
+uv run media-lab progress-bar in/reel.mp4 -o out/bar.mp4 --color yellow --position bottom
+uv run media-lab beat-sync in/track.mp3 --json
+uv run media-lab narrate "Bine ați venit la un nou episod!" -o out/intro_voice.mp4 --video in/clip.mp4
+uv run media-lab studio --port 8765
 ```
 
 The pipeline runs: cutout, backdrop, look, restore the voice the compositor

@@ -180,6 +180,54 @@ def interpret_prompt(
         0.2 if ("radiance" in p_lower or "stralucire" in p_lower or "lumina" in p_lower) else 0.0
     )
 
+    # 10. Speed Ramping
+    speed_factor = 1.0
+    if any(
+        k in p_lower for k in ("slow motion", "slow-mo", "slowmo", "incetineste", "încetinește")
+    ):
+        speed_factor = 0.5
+    elif any(
+        k in p_lower
+        for k in ("timelapse", "time-lapse", "fast forward", "accelereaza", "accelerează", "repede")
+    ):
+        speed_factor = 2.0
+    speed_match = re.search(r"\b([0-9.]+)x\b", p_lower)
+    if speed_match:
+        try:
+            val = float(speed_match.group(1))
+            if 0.1 <= val <= 10.0:
+                speed_factor = val
+        except ValueError:
+            pass
+
+    # 11. Social Retention Progress Bar
+    has_progress_bar = any(
+        k in p_lower
+        for k in (
+            "progress bar",
+            "bara de progres",
+            "bara progres",
+            "bara galbena",
+            "bara rosie",
+            "bară de progres",
+        )
+    )
+    pb_color = "yellow"
+    if "rosie" in p_lower or "red" in p_lower or "roșie" in p_lower:
+        pb_color = "red"
+    elif "alba" in p_lower or "white" in p_lower or "albă" in p_lower:
+        pb_color = "white"
+    elif "tiktok" in p_lower and "bara" in p_lower:
+        pb_color = "tiktok"
+    elif "cyan" in p_lower or "albastru" in p_lower:
+        pb_color = "cyan"
+    elif "verde" in p_lower or "green" in p_lower:
+        pb_color = "green"
+
+    pb_position = (
+        "top" if (("sus" in p_lower or "top" in p_lower) and "bara" in p_lower) else "bottom"
+    )
+
     video_spec = VideoEditSpec(
         aspect=aspect,
         smart_reframe=smart_reframe,
@@ -189,6 +237,10 @@ def interpret_prompt(
         look=look,
         subtitles=SubtitleEditSpec(enabled=subtitles_enabled, style=sub_style),
         typography=typo_spec,
+        speed=speed_factor,
+        progress_bar=has_progress_bar,
+        progress_bar_color=pb_color,
+        progress_bar_position=pb_position,
     )
 
     audio_spec = AudioEditSpec(
@@ -240,6 +292,14 @@ def plan_prompt(prompt: str, source: str | Path, output: str | Path) -> PromptPl
         ops.append(f"Subtitrări automate Whisper ({spec.video.subtitles.style})")
     if spec.audio.sfx_cues:
         ops.append(f"Efecte sonore procedurale ({len(spec.audio.sfx_cues)} efecte)")
+    if spec.video.speed != 1.0:
+        label = "slow-motion" if spec.video.speed < 1.0 else "timelapse"
+        ops.append(f"Modificare viteză ({spec.video.speed}x {label})")
+    if spec.video.progress_bar:
+        ops.append(
+            f"Bară animată de retenție ({spec.video.progress_bar_color} "
+            f"la {spec.video.progress_bar_position})"
+        )
     if spec.photo.retouch:
         ops.append("Retușare ten și netezire facială")
     if spec.photo.depth_blur:
