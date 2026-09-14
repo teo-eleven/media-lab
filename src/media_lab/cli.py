@@ -6,6 +6,7 @@ import argparse
 import sys
 from collections.abc import Sequence
 
+from .colour_transfer import RelightParams
 from .config import Config, load_config
 from .errors import MediaLabError
 from .kino import KinoRunner
@@ -14,6 +15,7 @@ from .paths import clear_work_directory
 from .pipeline import run_pipeline
 from .recipes.audio_bed import add_music_bed
 from .recipes.backdrop import place_on_backdrop
+from .recipes.colour_match import colour_match
 from .recipes.compose_spec import compose
 from .recipes.cutout import DEVICE_CHOICES, QUALITY_CHOICES, cut_out_person
 from .recipes.filters import LOOKS, apply_look, apply_look_chain
@@ -104,6 +106,21 @@ def build_parser() -> argparse.ArgumentParser:
     scale_cmd.add_argument(
         "--ratio", type=float, default=1.0, help="Real-world height ratio (subject / ref)"
     )
+
+    colour_cmd = subcommands.add_parser(
+        "colour-match",
+        help="Transfer background colour mood and apply scene relighting to subject",
+    )
+    _add_io_arguments(colour_cmd)
+    colour_cmd.add_argument("--bg", help="Reference background image or plate")
+    colour_cmd.add_argument(
+        "--strength", type=float, default=1.0, help="Colour transfer strength (0-1)"
+    )
+    colour_cmd.add_argument("--bright", type=float, default=1.0, help="Brightness multiplier")
+    colour_cmd.add_argument("--gamma", type=float, default=1.0, help="Gamma exponent")
+    colour_cmd.add_argument("--sat", type=float, default=1.0, help="Saturation multiplier")
+    colour_cmd.add_argument("--contrast", type=float, default=1.0, help="Contrast multiplier")
+    colour_cmd.add_argument("--fps", type=float, help="Framerate override")
 
     backdrop = subcommands.add_parser("backdrop", help="Composite a cutout onto a backdrop")
     _add_io_arguments(backdrop)
@@ -314,6 +331,28 @@ def _run_scale_plate(args: argparse.Namespace, config: Config, _runner: KinoRunn
     return 0
 
 
+def _run_colour_match(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    params = RelightParams(
+        bright=args.bright,
+        gamma=args.gamma,
+        sat=args.sat,
+        contrast=args.contrast,
+    )
+    result = colour_match(
+        args.input,
+        args.output,
+        config,
+        bg_ref=args.bg,
+        transfer_strength=args.strength,
+        params=params,
+        fps=args.fps,
+        force=args.force,
+    )
+    print(f"colour-matched subject written to {result.output} ({result.frames} frames)")
+    return 0
+
+
+
 
 
 
@@ -474,6 +513,7 @@ HANDLERS = {
     "upscale": _run_upscale,
     "ground": _run_ground,
     "scale-plate": _run_scale_plate,
+    "colour-match": _run_colour_match,
     "backdrop": _run_backdrop,
     "filter": _run_filter,
     "compose": _run_compose,
