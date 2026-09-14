@@ -504,7 +504,7 @@ Transformarea `media-lab` într-un agent complet capabil să execute orice edita
 
 ## Pași de implementare
 
-### Pasul 1 — Zona 1: Sunet & Audio Studio (`audio_enhance`, `silence_trim`, `sfx`)
+### Pasul 1 — Zona 1: Sunet & Audio Studio (`audio_enhance`, `silence_trim`, `sfx`) — GATA
 - **Ce se face**:
   - `src/media_lab/recipes/audio_enhance.py`: Mastering vocal de studio complet via ffmpeg filtergraph (high-pass 80Hz, EQ parametric pentru prezență și căldură vocală, de-esser sibilanțe 6.5kHz, compresor dinamic broadcast, noise gate/denoise).
   - `src/media_lab/recipes/silence_trim.py`: Tăiere automată a pauzelor moarte pe baza detecției de silențiu cu crossfade fin și tăieturi video sincronizate (jump-cut).

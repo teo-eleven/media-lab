@@ -17,6 +17,7 @@ from .ml_runner import MlRunner
 from .paths import clear_work_directory
 from .pipeline import run_pipeline
 from .recipes.audio_bed import add_music_bed
+from .recipes.audio_enhance import VOICE_PROFILES, enhance_audio
 from .recipes.backdrop import place_on_backdrop
 from .recipes.colour_match import colour_match
 from .recipes.compose_spec import compose
@@ -28,6 +29,8 @@ from .recipes.photo import PHOTO_ASPECTS, PHOTO_LOOKS, edit_photo, process_photo
 from .recipes.proxy_preview import proxy_preview
 from .recipes.punto_v23 import run_punto
 from .recipes.scale_plate import estimate_plate_scale
+from .recipes.sfx import SFX_KINDS, SfxCue, add_sfx
+from .recipes.silence_trim import trim_silence
 from .recipes.stems import AUDIO_FORMAT_CHOICES, TWO_STEMS_CHOICES, separate_stems
 from .recipes.subject_ground import ground_subject
 from .recipes.subtitles import generate_subtitles
@@ -281,6 +284,48 @@ def build_parser() -> argparse.ArgumentParser:
     music.add_argument("--target-lufs", type=float, default=-16.0)
     music.add_argument("--music-volume", type=float, default=1.0)
     music.add_argument("--no-loop", dest="loop", action="store_false", help="Do not loop the bed")
+
+    enhance_cmd = subcommands.add_parser(
+        "audio-enhance",
+        help="Studio vocal mastering (rumble high-pass, presence EQ, de-esser, compressor, LUFS)",
+    )
+    _add_io_arguments(enhance_cmd)
+    enhance_cmd.add_argument(
+        "--profile", default="podcast", choices=list(VOICE_PROFILES), help="Vocal EQ character"
+    )
+    enhance_cmd.add_argument(
+        "--target-lufs", type=float, default=-14.0, help="Target loudness (default: -14.0)"
+    )
+    enhance_cmd.add_argument("--no-de-ess", action="store_true", help="Disable de-esser")
+    enhance_cmd.add_argument("--no-gate", action="store_true", help="Disable noise gate")
+
+    silence_cmd = subcommands.add_parser(
+        "cut-silence",
+        help="Automatic dead-time and pause trimming (jump-cut video/audio)",
+    )
+    _add_io_arguments(silence_cmd)
+    silence_cmd.add_argument(
+        "--min-silence", type=float, default=0.4, help="Minimum silence duration to cut (seconds)"
+    )
+    silence_cmd.add_argument(
+        "--noise-db", type=float, default=-38.0, help="Silence noise floor threshold in dB"
+    )
+    silence_cmd.add_argument(
+        "--padding", type=float, default=0.08, help="Speech buffer padding (seconds)"
+    )
+
+    sfx_cmd = subcommands.add_parser(
+        "sfx",
+        help="Synthesize and mix sound effects (whoosh, pop, ding, impact, click) onto timeline",
+    )
+    _add_io_arguments(sfx_cmd)
+    sfx_cmd.add_argument(
+        "--kind", default="whoosh", choices=list(SFX_KINDS), help="Procedural SFX or sound file"
+    )
+    sfx_cmd.add_argument(
+        "--at", type=float, default=0.0, help="Timestamp in seconds to play the SFX"
+    )
+    sfx_cmd.add_argument("--volume", type=float, default=1.0, help="Sound effect volume multiplier")
 
     short = subcommands.add_parser("short", help="Export a vertical social clip")
     _add_io_arguments(short)
@@ -634,6 +679,50 @@ def _run_edit(args: argparse.Namespace, config: Config, runner: KinoRunner) -> i
     return 0
 
 
+def _run_audio_enhance(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    res = enhance_audio(
+        args.input,
+        args.output,
+        config,
+        profile=args.profile,
+        target_lufs=args.target_lufs,
+        de_ess=not args.no_de_ess,
+        noise_gate=not args.no_gate,
+        force=args.force,
+    )
+    print(f"audio enhanced: {res.output} ({res.profile} profile, {res.target_lufs} LUFS)")
+    return 0
+
+
+def _run_cut_silence(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    res = trim_silence(
+        args.input,
+        args.output,
+        config,
+        min_silence_s=args.min_silence,
+        noise_db=args.noise_db,
+        padding_s=args.padding,
+        force=args.force,
+    )
+    print(f"silence trimmed: {res.output}")
+    print(f"  original: {res.original_duration_s:.2f}s -> new: {res.new_duration_s:.2f}s")
+    print(f"  removed:  {res.removed_duration_s:.2f}s across {res.cuts_count} pauses")
+    return 0
+
+
+def _run_sfx(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    cue = SfxCue(kind=args.kind, at_s=args.at, volume=args.volume)
+    res = add_sfx(
+        args.input,
+        args.output,
+        config,
+        [cue],
+        force=args.force,
+    )
+    print(f"sfx mixed: {res.output} ({args.kind} at {args.at:.2f}s, vol {args.volume})")
+    return 0
+
+
 def _run_backdrop(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
     result = place_on_backdrop(
         args.input,
@@ -805,6 +894,9 @@ HANDLERS = {
     "music": _run_music,
     "short": _run_short,
     "pipeline": _run_pipeline,
+    "audio-enhance": _run_audio_enhance,
+    "cut-silence": _run_cut_silence,
+    "sfx": _run_sfx,
 }
 
 
