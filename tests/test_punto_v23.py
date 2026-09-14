@@ -52,28 +52,26 @@ def _mock_ml(self: MlRunner, script: Path, args: Sequence[str] = (), **kw: objec
             json.dumps({"model": "x", "device": "cpu", "frames": stats,
                         "stability_score": 3.3})
         )
-    elif name == "place_composite.py":
-        root = Path(kw["cwd"])  # type: ignore[arg-type]
-        cut = sorted((root / "work/punto-edit/isnet/cut").glob("f-*.png"))
-        placed = root / "work/punto-edit/isnet/placed"
-        placed.mkdir(parents=True, exist_ok=True)
-        for i in range(1, len(cut) + 1):
-            _write_rgba(placed / f"f-{i:04d}.png", SMALL_W, SMALL_H, tint=120)
+    elif name == "realesrgan_infer.py":
+        frames_in, out_dir = Path(list(args)[0]), Path(list(args)[1])
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for f in sorted(frames_in.glob("f-*.png")):
+            _write_rgba(out_dir / f.name, SMALL_W, SMALL_H, tint=210)
     return MlResult(command=(str(self.python), str(script)), stdout="", stderr="", duration_s=0.0)
 
 
-def _stub_rvm_env(config: Config) -> None:
+def _stub_ml_env(config: Config) -> None:
     (config.rvm_repo / "model").mkdir(parents=True, exist_ok=True)
     (config.rvm_repo / "model" / "__init__.py").write_text("x\n", encoding="utf-8")
     config.weights_dir.mkdir(parents=True, exist_ok=True)
-    for name in ("rvm_resnet50.pth", "rvm_mobilenetv3.pth"):
+    for name in ("rvm_resnet50.pth", "rvm_mobilenetv3.pth", "RealESRGAN_x2plus.pth"):
         (config.weights_dir / name).write_bytes(b"stub")
 
 
 @pytest.fixture
 def punto_scene(config: Config, monkeypatch: pytest.MonkeyPatch) -> None:
     """Shrink the runner to a renderable size and lay down synthetic inputs."""
-    _stub_rvm_env(config)
+    _stub_ml_env(config)
     monkeypatch.setattr(punto_v23, "CANVAS", (SMALL_W, SMALL_H))
     monkeypatch.setattr(punto_v23, "FPS", FPS)
     monkeypatch.setattr(punto_v23, "FRAMES", SMALL_FRAMES)
@@ -109,6 +107,18 @@ def test_proxy_chain_runs_and_renders(config: Config, punto_scene: None) -> None
     assert result.matte.stability_score == pytest.approx(3.3)
     assert result.preview.sheet.is_file()
     assert (config.work_dir / "punto-v23.yaml").is_file()
+
+
+def test_full_chain_runs_and_renders(config: Config, punto_scene: None) -> None:
+    result = run_punto(
+        config, MlRunner.from_config(config), config.work_dir / "punto-full.mp4", proxy=False
+    )
+
+    assert result.proxy_mode is False
+    assert result.output.is_file()
+    assert (result.composed.media.width, result.composed.media.height) == (SMALL_W, SMALL_H)
+    assert result.matte.model == "resnet50"
+
 
 
 def test_missing_source_is_reported(config: Config, monkeypatch: pytest.MonkeyPatch) -> None:
