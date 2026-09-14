@@ -11,7 +11,7 @@ from media_lab.cli import main
 from media_lab.config import Config
 from media_lab.kino import KinoRunner
 from media_lab.ml_runner import MlRunner
-from media_lab.prompt_agent import execute_prompt, interpret_prompt, plan_prompt
+from media_lab.prompt_agent import chat_agent, execute_prompt, interpret_prompt, plan_prompt
 
 
 def _generate_synthetic_video(path: Path, config: Config, duration: float = 2.0) -> Path:
@@ -135,3 +135,52 @@ def test_cli_prompt(
     )
     assert rc_exec == 0
     assert out.is_file()
+
+
+def test_chat_agent_conversational_flows(config: Config) -> None:
+    # 1. Greeting
+    greet_res = chat_agent("salut", None, config)
+    assert greet_res.intent == "greeting"
+    assert greet_res.executable is False
+    assert "Media Lab Studio" in greet_res.reply
+    assert len(greet_res.suggested_prompts) > 0
+
+    # 2. Help
+    help_res = chat_agent("ce poti face in studio?", None, config)
+    assert help_res.intent == "help"
+    assert help_res.executable is False
+    assert "Ce pot face pentru tine" in help_res.reply
+    assert len(help_res.suggested_prompts) > 0
+
+    # 3. Inspect with file
+    src = _generate_synthetic_video(config.in_dir / "chat_inspect.mp4", config, duration=1.0)
+    inspect_res = chat_agent("analizeaza clipul", src, config)
+    assert inspect_res.intent == "inspect"
+    assert src.name in inspect_res.reply
+    assert "Rezoluție" in inspect_res.reply
+    assert len(inspect_res.suggested_prompts) > 0
+
+    # 4. Inspect without file
+    inspect_none = chat_agent("ce proprietăți are clipul?", None, config)
+    assert inspect_none.intent == "inspect"
+    assert "Selectează un fișier" in inspect_none.reply
+
+    # 5. Ideation
+    idea_res = chat_agent("da-mi o idee virala de editare", None, config)
+    assert idea_res.intent == "ideation"
+    assert "Rețete Virale" in idea_res.reply
+    assert len(idea_res.suggested_prompts) > 0
+
+    # 6. Clarification for ambiguous prompt
+    vague_res = chat_agent("ceva dragut", None, config)
+    assert vague_res.intent == "clarification"
+    assert vague_res.executable is False
+    assert len(vague_res.suggested_prompts) > 0
+
+    # 7. Plan for concrete editing prompt
+    plan_res = chat_agent(
+        "fa un short vertical 9:16 cu subtitrari galbene si taie pauzele", src, config
+    )
+    assert plan_res.intent == "plan"
+    assert plan_res.executable is True
+    assert len(plan_res.plan_operations) >= 2

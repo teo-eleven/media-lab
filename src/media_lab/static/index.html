@@ -289,9 +289,8 @@
       </div>
 
       <div class="chat-input-bar">
-        <input type="text" id="promptInput" class="chat-input" placeholder="Scrie instrucțiunile de editare (ex: fă un short 9:16 cu subtitrări tiktok)..." onkeydown="if(event.key==='Enter') sendPrompt(false)">
-        <button class="btn secondary" onclick="sendPrompt(true)" title="Previzualizează planul fără să randezi">Plan Only</button>
-        <button class="btn" onclick="sendPrompt(false)">Execută 🚀</button>
+        <input type="text" id="promptInput" class="chat-input" placeholder="Scrie o instrucțiune sau întreabă agentul (ex: fă un short 9:16 cu subtitrări)..." onkeydown="if(event.key==='Enter') sendPrompt()">
+        <button class="btn" onclick="sendPrompt()">Trimite 💬</button>
       </div>
     </main>
 
@@ -379,14 +378,30 @@
       }
     }
 
-    function applySuggestion(text) {
-      document.getElementById('promptInput').value = text;
-      document.getElementById('promptInput').focus();
+    function renderMarkdown(md) {
+      if (!md) return '';
+      let html = escapeHtml(md);
+      html = html.replace(/^### (.*$)/gim, '<h4 style="margin: 8px 0 4px 0; color: #fff; font-size: 1rem;">$1</h4>');
+      html = html.replace(/^## (.*$)/gim, '<h3 style="margin: 10px 0 6px 0; color: #fff; font-size: 1.1rem;">$1</h3>');
+      html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+      html = html.replace(/`([^`]+)`/g, '<code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 0.85em; color: #818cf8;">$1</code>');
+      html = html.replace(/^&gt; (.*$)/gim, '<blockquote style="border-left: 3px solid var(--accent); padding-left: 8px; margin: 6px 0; color: var(--text-muted); font-style: italic;">$1</blockquote>');
+      html = html.replace(/^- (.*$)/gim, '<div style="margin-left: 12px; margin-bottom: 3px;">• $1</div>');
+      html = html.replace(/\n\n/g, '<div style="height: 8px;"></div>');
+      html = html.replace(/\n/g, '<br>');
+      return html;
     }
 
-    async function sendPrompt(planOnly) {
+    function applySuggestion(text) {
       const input = document.getElementById('promptInput');
-      const text = input.value.trim();
+      input.value = text;
+      input.focus();
+    }
+
+    async function sendPrompt(customText) {
+      const input = document.getElementById('promptInput');
+      const text = (customText || input.value).trim();
       if (!text) return;
 
       const messagesArea = document.getElementById('messagesArea');
@@ -396,20 +411,20 @@
       userMsg.className = 'message user';
       userMsg.textContent = text;
       messagesArea.appendChild(userMsg);
-      input.value = '';
+      if (!customText) input.value = '';
       messagesArea.scrollTop = messagesArea.scrollHeight;
 
       // Agent placeholder
       const agentMsg = document.createElement('div');
       agentMsg.className = 'message agent';
-      agentMsg.innerHTML = '<em>Agentul analizează promptul și pregătește fluxul de lucru...</em>';
+      agentMsg.innerHTML = '<em>Agentul analizează cererea ta...</em>';
       messagesArea.appendChild(agentMsg);
       messagesArea.scrollTop = messagesArea.scrollHeight;
 
       const payload = {
         prompt: text,
         input: currentSelectedFile ? `${currentSelectedFile.folder}/${currentSelectedFile.name}` : null,
-        plan_only: planOnly
+        execute: false
       };
 
       try {
@@ -425,22 +440,93 @@
           return;
         }
 
-        if (planOnly) {
+        let replyHtml = renderMarkdown(data.reply || '');
+
+        // If an executable plan is ready, append the plan card with action button
+        if (data.executable && data.operations && data.operations.length > 0) {
           let stepsHtml = data.operations.map((op, i) =>
             `<div class="plan-step"><span class="step-badge">${i+1}</span><span>${escapeHtml(op)}</span></div>`
           ).join('');
-          agentMsg.innerHTML = `<div><strong>Plan de acțiune generat:</strong></div><div class="plan-card">${stepsHtml}</div>`;
-        } else {
-          let stepsHtml = (data.steps || []).map((step, i) =>
-            `<div class="plan-step"><span class="step-badge">✓</span><span>${escapeHtml(step)}</span></div>`
-          ).join('');
-          agentMsg.innerHTML = `<div>🎉 <strong>Randare completată cu succes!</strong></div>
-          <div class="plan-card"><h4>Pași executați:</h4>${stepsHtml}</div>
-          <div style="margin-top: 8px;">Fișier salvat: <code>${escapeHtml(data.output)}</code></div>`;
-          loadFiles();
+          const encodedPrompt = encodeURIComponent(text);
+          replyHtml += `
+            <div class="plan-card" style="margin-top: 12px;">
+              <div style="font-weight: 700; margin-bottom: 8px; color: #fff;">📋 Etape de randare:</div>
+              ${stepsHtml}
+              <button class="btn" style="margin-top: 12px; width: 100%; justify-content: center; font-size: 0.95rem; padding: 12px;" onclick="executePlan('${encodedPrompt}')">
+                🚀 Lansează Randarea Acum
+              </button>
+            </div>
+          `;
         }
+
+        // If suggestions are provided, append interactive chips
+        if (data.suggested_prompts && data.suggested_prompts.length > 0) {
+          let chipsHtml = data.suggested_prompts.map(p => {
+            const safeP = escapeHtml(p).replace(/'/g, "\\'");
+            return `<span class="chip" style="font-size: 0.76rem;" onclick="applySuggestion('${safeP}')">${escapeHtml(p)}</span>`;
+          }).join('');
+          replyHtml += `<div style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px;">${chipsHtml}</div>`;
+        }
+
+        agentMsg.innerHTML = replyHtml;
       } catch (err) {
         agentMsg.innerHTML = `<span style="color: var(--danger);">Eroare rețea: ${escapeHtml(err.message)}</span>`;
+      }
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+    }
+
+    async function executePlan(encodedPrompt) {
+      const text = decodeURIComponent(encodedPrompt);
+      const messagesArea = document.getElementById('messagesArea');
+
+      const statusMsg = document.createElement('div');
+      statusMsg.className = 'message agent';
+      statusMsg.innerHTML = `<em>⚙️ Se procesează randarea prin motorul Media Lab (FFmpeg & AI)... Te rog așteaptă câteva momente...</em>`;
+      messagesArea.appendChild(statusMsg);
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+
+      const payload = {
+        prompt: text,
+        input: currentSelectedFile ? `${currentSelectedFile.folder}/${currentSelectedFile.name}` : null,
+        execute: true
+      };
+
+      try {
+        const res = await fetch('/api/prompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          statusMsg.innerHTML = `<span style="color: var(--danger);">Eroare la randare: ${escapeHtml(data.error)}</span>`;
+          return;
+        }
+
+        let stepsHtml = (data.steps || []).map((step, i) =>
+          `<div class="plan-step"><span class="step-badge">✓</span><span>${escapeHtml(step)}</span></div>`
+        ).join('');
+
+        statusMsg.innerHTML = `
+          <div>${renderMarkdown(data.reply || 'Randare completată cu succes!')}</div>
+          <div class="plan-card" style="margin-top: 10px;">
+            <h4>Pași finalizați:</h4>
+            ${stepsHtml}
+          </div>
+          <div style="margin-top: 10px; font-weight: 600;">
+            Fișier generat: <code style="color: var(--success);">${escapeHtml(data.output)}</code>
+          </div>
+        `;
+
+        await loadFiles();
+
+        // Select the newly rendered output in the player
+        if (data.output) {
+          selectFile('out', { name: data.output, type: 'video', size_human: 'Nou' }, null);
+        }
+      } catch (err) {
+        statusMsg.innerHTML = `<span style="color: var(--danger);">Eroare rețea la randare: ${escapeHtml(err.message)}</span>`;
       }
       messagesArea.scrollTop = messagesArea.scrollHeight;
     }
