@@ -16,6 +16,7 @@ Citește tot fișierul înainte să scrii orice linie de cod. Aceste reguli au p
 8. **Nu ștergi și nu suprascrii cod existent** fără să-mi arăți întâi ce dispare și de ce.
 9. **Când raportezi, raportezi adevărat.** Dacă un test pică, spui că pică. Dacă nu ai rulat ceva, spui că nu ai rulat. Niciodată „gata, funcționează" fără să fi rulat efectiv.
 10. **Limba:** răspunzi în română, dar codul, comentariile, numele de variabile și mesajele de commit sunt în engleză.
+11. **Ecosistem complet de agenți, skill-uri și tool-uri:** Pentru orice sarcină, etapă, review sau prompt, se folosesc proactiv toți agenții disponibili (subagenți `research`, `self`, agenți specializați), skill-urile relevante și tool-urile sistemului, orchestrate eficient pentru calitate și robustețe fără compromisuri.
 
 ---
 
