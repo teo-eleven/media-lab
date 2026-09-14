@@ -10,28 +10,39 @@ from pathlib import Path
 from .colour_transfer import RelightParams
 from .config import Config, load_config
 from .edit_spec import AudioEditSpec, EditSpec, SubtitleEditSpec, VideoEditSpec, parse_edit_spec
-from .errors import MediaLabError
+from .errors import MediaLabError, ValidationError
 from .inspect import inspect_media
 from .kino import KinoRunner
+from .mcp_server import run_mcp_server
 from .ml_runner import MlRunner
 from .paths import clear_work_directory
 from .pipeline import run_pipeline
+from .prompt_agent import execute_prompt, plan_prompt
 from .recipes.audio_bed import add_music_bed
+from .recipes.audio_enhance import VOICE_PROFILES, enhance_audio
 from .recipes.backdrop import place_on_backdrop
+from .recipes.broll import BrollCut, insert_broll
 from .recipes.colour_match import colour_match
 from .recipes.compose_spec import compose
 from .recipes.cutout import DEVICE_CHOICES, QUALITY_CHOICES, cut_out_person
 from .recipes.edit import run_edit_spec
+from .recipes.face_retouch import retouch_portrait
 from .recipes.filters import LOOKS, apply_look, apply_look_chain
+from .recipes.inpainting import inpaint_image
 from .recipes.matte_video import MODEL_CHOICES, matte_video
 from .recipes.photo import PHOTO_ASPECTS, PHOTO_LOOKS, edit_photo, process_photo_batch
 from .recipes.proxy_preview import proxy_preview
+from .recipes.punch_zoom import punch_zoom
 from .recipes.punto_v23 import run_punto
 from .recipes.scale_plate import estimate_plate_scale
+from .recipes.sfx import SFX_KINDS, SfxCue, add_sfx
+from .recipes.silence_trim import trim_silence
+from .recipes.smart_reframe import VALID_REFRAME_MODES, smart_reframe
 from .recipes.stems import AUDIO_FORMAT_CHOICES, TWO_STEMS_CHOICES, separate_stems
 from .recipes.subject_ground import ground_subject
 from .recipes.subtitles import generate_subtitles
 from .recipes.to_short import to_short
+from .recipes.typography import VALID_POSITIONS, TypographyStyle, apply_typography
 from .recipes.upscale import upscale
 from .subtitles import STYLE_CHOICES
 from .verify import ASPECT_RATIOS
@@ -281,6 +292,160 @@ def build_parser() -> argparse.ArgumentParser:
     music.add_argument("--target-lufs", type=float, default=-16.0)
     music.add_argument("--music-volume", type=float, default=1.0)
     music.add_argument("--no-loop", dest="loop", action="store_false", help="Do not loop the bed")
+
+    enhance_cmd = subcommands.add_parser(
+        "audio-enhance",
+        help="Studio vocal mastering (rumble high-pass, presence EQ, de-esser, compressor, LUFS)",
+    )
+    _add_io_arguments(enhance_cmd)
+    enhance_cmd.add_argument(
+        "--profile", default="podcast", choices=list(VOICE_PROFILES), help="Vocal EQ character"
+    )
+    enhance_cmd.add_argument(
+        "--target-lufs", type=float, default=-14.0, help="Target loudness (default: -14.0)"
+    )
+    enhance_cmd.add_argument("--no-de-ess", action="store_true", help="Disable de-esser")
+    enhance_cmd.add_argument("--no-gate", action="store_true", help="Disable noise gate")
+
+    silence_cmd = subcommands.add_parser(
+        "cut-silence",
+        help="Automatic dead-time and pause trimming (jump-cut video/audio)",
+    )
+    _add_io_arguments(silence_cmd)
+    silence_cmd.add_argument(
+        "--min-silence", type=float, default=0.4, help="Minimum silence duration to cut (seconds)"
+    )
+    silence_cmd.add_argument(
+        "--noise-db", type=float, default=-38.0, help="Silence noise floor threshold in dB"
+    )
+    silence_cmd.add_argument(
+        "--padding", type=float, default=0.08, help="Speech buffer padding (seconds)"
+    )
+
+    sfx_cmd = subcommands.add_parser(
+        "sfx",
+        help="Synthesize and mix sound effects (whoosh, pop, ding, impact, click) onto timeline",
+    )
+    _add_io_arguments(sfx_cmd)
+    sfx_cmd.add_argument(
+        "--kind", default="whoosh", choices=list(SFX_KINDS), help="Procedural SFX or sound file"
+    )
+    sfx_cmd.add_argument(
+        "--at", type=float, default=0.0, help="Timestamp in seconds to play the SFX"
+    )
+    sfx_cmd.add_argument("--volume", type=float, default=1.0, help="Sound effect volume multiplier")
+
+    reframe_cmd = subcommands.add_parser(
+        "smart-reframe",
+        help="Intelligent vertical reframe with face/salience tracking or split-blur",
+    )
+    _add_io_arguments(reframe_cmd)
+    reframe_cmd.add_argument(
+        "--aspect", default="9:16", choices=list(ASPECT_RATIOS), help="Target aspect ratio"
+    )
+    reframe_cmd.add_argument(
+        "--mode", default="smart", choices=list(VALID_REFRAME_MODES), help="Reframe mode"
+    )
+
+    zoom_cmd = subcommands.add_parser(
+        "punch-zoom",
+        help="Dynamic retention punch-in zoom (1.1x–1.25x) for video engagement",
+    )
+    _add_io_arguments(zoom_cmd)
+    zoom_cmd.add_argument(
+        "--auto-interval",
+        type=float,
+        default=5.0,
+        help="Rhythmic zoom interval in seconds (0 to disable auto)",
+    )
+    zoom_cmd.add_argument("--duration", type=float, default=2.0, help="Zoom duration in seconds")
+    zoom_cmd.add_argument(
+        "--scale", type=float, default=1.15, help="Zoom scale factor (e.g. 1.15 for 115%)"
+    )
+
+    broll_cmd = subcommands.add_parser(
+        "broll",
+        help="Overlay B-roll footage or stills preserving primary dialogue track (L/J-cut)",
+    )
+    _add_io_arguments(broll_cmd)
+    broll_cmd.add_argument("--clip", required=True, help="Path to B-roll video or image")
+    broll_cmd.add_argument("--start", type=float, default=0.0, help="Start timestamp in seconds")
+    broll_cmd.add_argument("--duration", type=float, default=3.0, help="B-roll duration in seconds")
+    broll_cmd.add_argument(
+        "--transition", default="cut", choices=["cut", "fade"], help="Cutaway transition style"
+    )
+    broll_cmd.add_argument(
+        "--volume", type=float, default=0.0, help="B-roll audio mix volume (0.0 = muted)"
+    )
+
+    typo_cmd = subcommands.add_parser(
+        "text-overlay",
+        help="Render styled typography title badge / lower-third onto photo or video",
+    )
+    _add_io_arguments(typo_cmd)
+    typo_cmd.add_argument("--text", required=True, help="Text to render")
+    typo_cmd.add_argument(
+        "--position", choices=sorted(VALID_POSITIONS), default="bottom", help="Screen position"
+    )
+    typo_cmd.add_argument("--font-size", type=int, default=44, help="Font size in pixels")
+    typo_cmd.add_argument("--text-color", default="#FFFFFF", help="Hex color for text")
+    typo_cmd.add_argument(
+        "--no-badge", dest="badge", action="store_false", help="Disable pill badge"
+    )
+    typo_cmd.add_argument(
+        "--start", type=float, default=0.0, help="Video overlay start time in seconds"
+    )
+    typo_cmd.add_argument(
+        "--duration", type=float, default=None, help="Video overlay duration in seconds"
+    )
+
+    inpaint_cmd = subcommands.add_parser(
+        "inpaint",
+        help="Content-aware object erasing and background reconstruction",
+    )
+    _add_io_arguments(inpaint_cmd)
+    inpaint_cmd.add_argument("--bbox", help="Comma-separated x,y,w,h bounding box to erase")
+    inpaint_cmd.add_argument("--mask", help="Path to binary mask image")
+    inpaint_cmd.add_argument(
+        "--method", choices=["telea", "ns"], default="telea", help="Inpainting algorithm"
+    )
+    inpaint_cmd.add_argument("--radius", type=int, default=5, help="Inpaint neighborhood radius")
+
+    retouch_cmd = subcommands.add_parser(
+        "retouch",
+        help="Portrait retouching (edge-preserving skin smoothing and depth-of-field bokeh)",
+    )
+    _add_io_arguments(retouch_cmd)
+    retouch_cmd.add_argument(
+        "--no-smooth", dest="smooth", action="store_false", help="Disable skin smoothing"
+    )
+    retouch_cmd.add_argument(
+        "--skin-strength", type=float, default=0.5, help="Skin smoothing strength [0.0, 1.0]"
+    )
+    retouch_cmd.add_argument(
+        "--bokeh", type=float, default=0.0, help="Background depth blur sigma (0 to disable)"
+    )
+    retouch_cmd.add_argument(
+        "--radiance", type=float, default=0.0, help="Skin radiance warmth [0.0, 1.0]"
+    )
+    retouch_cmd.add_argument("--mask", help="Optional silhouette mask for depth bokeh")
+
+    prompt_cmd = subcommands.add_parser(
+        "prompt",
+        help="Natural language autonomous editor (Romanian and English prompt-to-edit)",
+    )
+    prompt_cmd.add_argument("prompt", help="Natural language editing instructions")
+    prompt_cmd.add_argument("-i", "--input", required=True, help="Input media file path")
+    prompt_cmd.add_argument("-o", "--output", required=True, help="Output destination path")
+    prompt_cmd.add_argument(
+        "--plan-only", action="store_true", help="Print derived action plan without executing"
+    )
+    prompt_cmd.add_argument("--force", action="store_true", help="Overwrite existing output")
+
+    subcommands.add_parser(
+        "mcp",
+        help="Run native Model Context Protocol (MCP) server over stdio for AI integration",
+    )
 
     short = subcommands.add_parser("short", help="Export a vertical social clip")
     _add_io_arguments(short)
@@ -634,6 +799,50 @@ def _run_edit(args: argparse.Namespace, config: Config, runner: KinoRunner) -> i
     return 0
 
 
+def _run_audio_enhance(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    res = enhance_audio(
+        args.input,
+        args.output,
+        config,
+        profile=args.profile,
+        target_lufs=args.target_lufs,
+        de_ess=not args.no_de_ess,
+        noise_gate=not args.no_gate,
+        force=args.force,
+    )
+    print(f"audio enhanced: {res.output} ({res.profile} profile, {res.target_lufs} LUFS)")
+    return 0
+
+
+def _run_cut_silence(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    res = trim_silence(
+        args.input,
+        args.output,
+        config,
+        min_silence_s=args.min_silence,
+        noise_db=args.noise_db,
+        padding_s=args.padding,
+        force=args.force,
+    )
+    print(f"silence trimmed: {res.output}")
+    print(f"  original: {res.original_duration_s:.2f}s -> new: {res.new_duration_s:.2f}s")
+    print(f"  removed:  {res.removed_duration_s:.2f}s across {res.cuts_count} pauses")
+    return 0
+
+
+def _run_sfx(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    cue = SfxCue(kind=args.kind, at_s=args.at, volume=args.volume)
+    res = add_sfx(
+        args.input,
+        args.output,
+        config,
+        [cue],
+        force=args.force,
+    )
+    print(f"sfx mixed: {res.output} ({args.kind} at {args.at:.2f}s, vol {args.volume})")
+    return 0
+
+
 def _run_backdrop(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
     result = place_on_backdrop(
         args.input,
@@ -784,6 +993,158 @@ def _run_short(args: argparse.Namespace, config: Config, runner: KinoRunner) -> 
     return 0
 
 
+def _run_smart_reframe(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    result = smart_reframe(
+        args.input,
+        args.output,
+        config,
+        target_aspect=args.aspect,
+        mode=args.mode,
+        force=args.force,
+    )
+    print(f"smart-reframe written to {args.output}")
+    print(f"  aspect {result.target_aspect}, mode {result.mode}")
+    if result.crop_box:
+        print(f"  crop box: {result.crop_box}")
+    return 0
+
+
+def _run_punch_zoom(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    result = punch_zoom(
+        args.input,
+        args.output,
+        config,
+        auto_interval_s=args.auto_interval if args.auto_interval > 0 else None,
+        auto_zoom_duration_s=args.duration,
+        auto_scale=args.scale,
+        force=args.force,
+    )
+    print(f"punch-zoom written to {args.output}")
+    print(f"  cues applied: {result.cues_applied}")
+    return 0
+
+
+def _run_broll(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    cuts = [
+        BrollCut(
+            path=args.clip,
+            start_s=args.start,
+            duration_s=args.duration,
+            transition=args.transition,
+            volume=args.volume,
+        )
+    ]
+    result = insert_broll(
+        args.input,
+        args.output,
+        cuts,
+        config,
+        force=args.force,
+    )
+    print(f"broll written to {args.output}")
+    print(f"  cuts applied: {result.cuts_count}")
+    return 0
+
+
+def _run_text_overlay(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    style = TypographyStyle(
+        position=args.position,
+        font_size=args.font_size,
+        text_color=args.text_color,
+        badge=args.badge,
+    )
+    result = apply_typography(
+        args.input,
+        args.output,
+        args.text,
+        config,
+        style=style,
+        start_s=args.start,
+        duration_s=args.duration,
+        force=args.force,
+    )
+    media_type = "video" if result.is_video else "image"
+    print(f"text-overlay written to {args.output} ({media_type}, {result.width}x{result.height})")
+    print(f"  lines rendered: {result.lines_rendered}")
+    return 0
+
+
+def _run_inpaint(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    bbox: tuple[int, int, int, int] | None = None
+    if args.bbox:
+        try:
+            parts = [int(p.strip()) for p in args.bbox.split(",")]
+        except ValueError:
+            raise ValidationError(
+                f"--bbox must be 'x,y,w,h' with 4 integer values, got: {args.bbox!r}"
+            ) from None
+        if len(parts) != 4:
+            raise ValidationError(
+                f"--bbox must be 'x,y,w,h' with 4 integer values, got: {args.bbox!r}"
+            )
+        bbox = (parts[0], parts[1], parts[2], parts[3])
+
+    result = inpaint_image(
+        args.input,
+        args.output,
+        config,
+        bbox=bbox,
+        mask_path=args.mask,
+        method=args.method,
+        inpaint_radius=args.radius,
+        force=args.force,
+    )
+    print(f"inpaint written to {args.output} ({result.width}x{result.height})")
+    print(f"  method: {result.method}, erased pixels: {result.erased_pixels}")
+    return 0
+
+
+def _run_retouch(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    result = retouch_portrait(
+        args.input,
+        args.output,
+        config,
+        smooth_skin=args.smooth,
+        skin_strength=args.skin_strength,
+        depth_blur=args.bokeh > 0.0,
+        blur_sigma=args.bokeh,
+        mask_path=args.mask,
+        radiance=args.radiance,
+        force=args.force,
+    )
+    print(f"retouch written to {args.output} ({result.width}x{result.height})")
+    print(f"  skin smoothed: {result.skin_smoothed}, depth blur: {result.depth_blur_applied}")
+    return 0
+
+
+def _run_prompt(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    ml_runner = MlRunner.from_config(config)
+    if args.plan_only:
+        plan = plan_prompt(args.prompt, args.input, args.output)
+        print(f"Plan derived from: {args.prompt!r}")
+        for i, op in enumerate(plan.operations, start=1):
+            print(f"  {i}. {op}")
+        return 0
+
+    result = execute_prompt(
+        args.prompt,
+        args.input,
+        args.output,
+        config,
+        runner,
+        ml_runner,
+        force=args.force,
+    )
+    print(f"prompt executed -> {args.output}")
+    print(f"  steps executed: {', '.join(result.steps_executed)}")
+    return 0
+
+
+def _run_mcp(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    run_mcp_server(config)
+    return 0
+
+
 HANDLERS = {
     "clean": _run_clean,
     "cutout": _run_cutout,
@@ -805,6 +1166,17 @@ HANDLERS = {
     "music": _run_music,
     "short": _run_short,
     "pipeline": _run_pipeline,
+    "audio-enhance": _run_audio_enhance,
+    "cut-silence": _run_cut_silence,
+    "sfx": _run_sfx,
+    "smart-reframe": _run_smart_reframe,
+    "punch-zoom": _run_punch_zoom,
+    "broll": _run_broll,
+    "text-overlay": _run_text_overlay,
+    "inpaint": _run_inpaint,
+    "retouch": _run_retouch,
+    "prompt": _run_prompt,
+    "mcp": _run_mcp,
 }
 
 

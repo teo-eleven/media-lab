@@ -496,4 +496,58 @@ orchestrare declarativă prompt-to-edit).
   - Actualizare completă `README.md`, `DECISIONS.md`, `PLAN.md`.
   - Push pe noul branch git.
 
+---
+
+# FAZA 4 — Agentul Autonom Omnichannel (Sunet Studio, Video Pacing, Foto & MCP)
+
+Transformarea `media-lab` într-un agent complet capabil să execute orice editare foto, video și audio din prompturi în limbaj natural sau prin protocolul deschis MCP (Model Context Protocol).
+
+## Pași de implementare
+
+### Pasul 1 — Zona 1: Sunet & Audio Studio (`audio_enhance`, `silence_trim`, `sfx`) — GATA
+- **Ce se face**:
+  - `src/media_lab/recipes/audio_enhance.py`: Mastering vocal de studio complet via ffmpeg filtergraph (high-pass 80Hz, EQ parametric pentru prezență și căldură vocală, de-esser sibilanțe 6.5kHz, compresor dinamic broadcast, noise gate/denoise).
+  - `src/media_lab/recipes/silence_trim.py`: Tăiere automată a pauzelor moarte pe baza detecției de silențiu cu crossfade fin și tăieturi video sincronizate (jump-cut).
+  - `src/media_lab/recipes/sfx.py`: Sound effects engine (efecte sonore whoosh, pop, ding, riser, impact sincronizate la tăieturi, subtitrări sau momente cheie).
+  - CLI: `media-lab audio-enhance`, `media-lab cut-silence`, `media-lab sfx`.
+  - Teste unitare și de integrare.
+
+---
+
+### Pasul 2 — Zona 2: Video & Pacing (`smart_reframe`, `punch_zoom`, `broll`) — GATA
+- **Ce se face**:
+  - `src/media_lab/recipes/smart_reframe.py`: Reîncadrare inteligentă 9:16 cu face tracking și panning fluid cinematic.
+  - `src/media_lab/recipes/punch_zoom.py`: Punch-in zooms dinamice (1.1x–1.15x) pe punctele cheie pentru retenție video.
+  - `src/media_lab/recipes/broll.py`: Inserare automată de cadre B-Roll (imagine/video cutaway) cu pista audio principală păstrată neîntreruptă (L-cut/J-cut).
+  - CLI: `media-lab smart-reframe`, `media-lab punch-zoom`, `media-lab broll`.
+  - Teste unitare și de integrare.
+
+---
+
+### Pasul 3 — Zona 3: Foto & Grafică (`typography`, `inpainting`, `face_retouch`) — GATA
+- **Ce se face**:
+  - `src/media_lab/recipes/typography.py`: Motor de text & titluri grafice peste imagini/video (drop shadow, stroke, capsule colorate, împachetare automată).
+  - `src/media_lab/recipes/inpainting.py`: Ștergere obiecte nedorite și reconstrucție fundal (inpainting local).
+  - `src/media_lab/recipes/face_retouch.py`: Retușare portret: netezire discretă a tenului și simulare adâncime de câmp (defocus blur pe fundal cu separare de mască).
+  - CLI: `media-lab text-overlay`, `media-lab inpaint`, `media-lab retouch`.
+  - Teste unitare și de integrare.
+
+---
+
+### Pasul 4 — Zona 4: Prompt-to-Edit & MCP Server (`prompt_agent`, `mcp_server`, `edit_spec`) — GATA
+- **Ce se face**:
+  - `src/media_lab/prompt_agent.py`: Interpret inteligent de prompturi în limbaj natural (română și engleză) care traduce cererea utilizatorului în `EditSpec`.
+  - Extindere `src/media_lab/edit_spec.py` și `src/media_lab/recipes/edit.py` pentru noile capabilități.
+  - `src/media_lab/mcp_server.py`: Server nativ Model Context Protocol (MCP) prin stdio pentru integrare directă cu Antigravity, Claude, Cursor.
+  - CLI: `media-lab prompt` și `media-lab mcp`.
+  - Teste complete.
+
+---
+
+### Pasul 5 — Verificare completă, Code Review, Documentație și Push — GATA
+- Verificare completă: `make check` (0 linter errors, strict mypy 0 issues, pytest acoperire $\ge 80\%$).
+- Audit de cod și securitate realizat de agentul Lead Code Reviewer & Security Auditor; remediate toate constatările identificate (audio-only verify_render, -loop 1 video typography, verificare audio broll, amix stereo sample rate format, silencedetect EOF handling, aresample anti-drift, etc.).
+- Documentare completată în `README.md` și `DECISIONS.md`.
+- Sincronizare și push pe git pe branch-ul `feat/video-agent-phase2`.
+
 

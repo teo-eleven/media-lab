@@ -32,6 +32,17 @@ probed and checked against what was asked for.
 | `media-lab photo`        | Batch/single photo edit, social crop, backdrop swap & colour match     |
 | `media-lab inspect`      | Deep media inspection returning ground-truth JSON for autonomous agents|
 | `media-lab edit`         | Declarative prompt-to-edit orchestrator (flags or edit-spec YAML)      |
+| `media-lab audio-enhance`| Studio vocal mastering (rumble filter, EQ, de-esser, compand, LUFS)    |
+| `media-lab cut-silence`  | Automatic dead-time and pause trimming (jump-cut video/audio)          |
+| `media-lab sfx`          | Synthesize and mix procedural sound effects (whoosh, pop, ding, impact)|
+| `media-lab smart-reframe`| Smart vertical 9:16 reframe with face/subject tracking or split-blur   |
+| `media-lab punch-zoom`   | Dynamic retention punch-in camera zooms (1.1x–1.25x)                   |
+| `media-lab broll`        | B-roll cutaways overlay preserving primary dialogue track (L/J-cut)    |
+| `media-lab text-overlay` | Styled typography title badge and lower-thirds with pill background    |
+| `media-lab inpaint`      | Content-aware object/blemish erasing (Telea / Navier-Stokes)           |
+| `media-lab retouch`      | Portrait retouching: skin smoothing and bokeh depth-of-field blur      |
+| `media-lab prompt`       | Autonomous agent: prompt-to-edit in natural language (RO & EN)         |
+| `media-lab mcp`          | Model Context Protocol (MCP) server over stdio for AI assistant pairing|
 | `media-lab pipeline`     | Run the whole edit in one pass                                         |
 | `media-lab punto`        | Reproduce the punto v23 render through matte/compose/proxy             |
 | `media-lab clean`        | Empty `work/` (add `--dry-run` to preview first)                       |
@@ -114,6 +125,27 @@ uv run media-lab inspect in/clip.mp4 --json
 # 5. Declarative prompt-to-edit orchestration (one-pass audio cleaning, grading, reframing, subs, music)
 uv run media-lab edit in/clip.mp4 -o out/reel.mp4 --target 9:16 --clean-speech --look cinematic --subtitles --sub-style tiktok --music in/beat.mp3
 uv run media-lab edit --spec spec.yaml
+
+# omnichannel autonomous studio (Phase 4)
+# 1. Audio studio & speech mastering
+uv run media-lab audio-enhance in/podcast.mp3 -o out/mastered.mp3 --profile podcast
+uv run media-lab cut-silence   in/raw_talk.mp4 -o out/jumpcut.mp4 --min-silence 0.4
+uv run media-lab sfx           in/teaser.mp4   -o out/punctuated.mp4 --cue "whoosh@0.0" --cue "impact@2.5"
+
+# 2. Video pacing & reframing
+uv run media-lab smart-reframe in/interview.mp4 -o out/vertical.mp4 --aspect 9:16 --mode smart
+uv run media-lab punch-zoom    in/monologue.mp4 -o out/dynamic.mp4 --interval 4.0 --scale 1.15
+uv run media-lab broll         in/host.mp4      -o out/with_broll.mp4 --cut in/demo.mp4@2.0:3.5
+
+# 3. Photo & graphics studio
+uv run media-lab text-overlay in/cover.jpg -o out/badge.jpg --text "Breaking News" --position top --badge
+uv run media-lab inpaint      in/photo.png -o out/clean.png --bbox 120,80,60,40
+uv run media-lab retouch      in/portrait.jpg -o out/glow.jpg --smooth 0.6 --depth-blur --radiance 0.2
+
+# 4. Prompt agent & MCP server
+uv run media-lab prompt in/vlog.mp4 -o out/viral.mp4 -p "transforma in short 9:16 cu subtitrari galbene, curata vocea, scoate pauzele si pune titlul 'Podcast #1' sus"
+uv run media-lab prompt in/vlog.mp4 -p "make it a reel with tiktok subtitles and whoosh sound effect" --dry-run
+uv run media-lab mcp
 ```
 
 The pipeline runs: cutout, backdrop, look, restore the voice the compositor
