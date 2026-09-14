@@ -16,12 +16,17 @@ from .inspect import inspect_media
 from .kino import KinoRunner
 from .ml_runner import MlRunner
 from .prompt_agent import execute_prompt
+from .recipes.assembly import assemble_clips
 from .recipes.audio_enhance import enhance_audio
+from .recipes.beat_sync import detect_beats
 from .recipes.face_retouch import retouch_portrait
 from .recipes.inpainting import inpaint_image
+from .recipes.narrator import generate_narration
+from .recipes.progress_bar import add_progress_bar
 from .recipes.punch_zoom import punch_zoom
 from .recipes.silence_trim import trim_silence
 from .recipes.smart_reframe import smart_reframe
+from .recipes.speed import change_speed
 from .recipes.typography import TypographyStyle, apply_typography
 
 PROTOCOL_VERSION = "2024-11-05"
@@ -209,6 +214,86 @@ TOOLS: list[dict[str, Any]] = [
             "required": ["source", "output"],
         },
     },
+    {
+        "name": "assemble_clips",
+        "description": "Concatenate multiple video clips with smooth xfade transitions.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "sources": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of video clip paths",
+                },
+                "output": {"type": "string", "description": "Destination path"},
+                "transition": {"type": "string", "default": "fade"},
+                "duration": {"type": "number", "default": 0.75},
+                "aspect": {"type": "string", "default": "16:9"},
+                "force": {"type": "boolean", "default": False},
+            },
+            "required": ["sources", "output"],
+        },
+    },
+    {
+        "name": "change_speed",
+        "description": "Modify playback speed (slow-mo or timelapse) with pitch-preserved audio.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "Input media path"},
+                "output": {"type": "string", "description": "Destination path"},
+                "speed": {"type": "number", "default": 1.0},
+                "force": {"type": "boolean", "default": False},
+            },
+            "required": ["source", "output", "speed"],
+        },
+    },
+    {
+        "name": "add_progress_bar",
+        "description": "Add an animated social retention progress bar to a video.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "Input video path"},
+                "output": {"type": "string", "description": "Destination path"},
+                "position": {"type": "string", "enum": ["bottom", "top"], "default": "bottom"},
+                "height": {"type": "integer", "default": 6},
+                "color": {"type": "string", "default": "yellow"},
+                "force": {"type": "boolean", "default": False},
+            },
+            "required": ["source", "output"],
+        },
+    },
+    {
+        "name": "detect_beats",
+        "description": "Detect musical beats, tempo (BPM) and rhythm onsets in an audio track.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "Input audio/video path"},
+            },
+            "required": ["source"],
+        },
+    },
+    {
+        "name": "generate_narration",
+        "description": (
+            "Generate local offline text-to-speech voiceover and optionally attach to video."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Text to speak"},
+                "output": {"type": "string", "description": "Destination audio or video path"},
+                "voice": {"type": "string", "description": "Voice name (e.g. 'Ioana', 'Daniel')"},
+                "rate_wpm": {"type": "integer", "default": 175},
+                "video_source": {"type": "string", "description": "Optional video to attach to"},
+                "start_s": {"type": "number", "default": 0.0},
+                "force": {"type": "boolean", "default": False},
+            },
+            "required": ["text", "output"],
+        },
+    },
 ]
 
 
@@ -330,6 +415,81 @@ def dispatch_tool(name: str, arguments: dict[str, Any], config: Config) -> dict[
             force=arguments.get("force", False),
         )
         return {"output": str(res_p.output), "skin_smoothed": res_p.skin_smoothed}
+
+    if name == "assemble_clips":
+        res_ass = assemble_clips(
+            arguments["sources"],
+            arguments["output"],
+            config,
+            transition=arguments.get("transition", "fade"),
+            transition_duration_s=float(arguments.get("duration", 0.75)),
+            aspect=arguments.get("aspect", "16:9"),
+            force=arguments.get("force", False),
+        )
+        return {
+            "output": str(res_ass.output),
+            "clips_count": res_ass.clips_count,
+            "transition": res_ass.transition,
+            "duration_s": res_ass.total_duration_s,
+        }
+
+    if name == "change_speed":
+        res_spd = change_speed(
+            arguments["source"],
+            arguments["output"],
+            config,
+            speed=float(arguments.get("speed", 1.0)),
+            force=arguments.get("force", False),
+        )
+        return {
+            "output": str(res_spd.output),
+            "speed_factor": res_spd.speed_factor,
+            "duration_s": res_spd.new_duration_s,
+        }
+
+    if name == "add_progress_bar":
+        res_pb = add_progress_bar(
+            arguments["source"],
+            arguments["output"],
+            config,
+            position=arguments.get("position", "bottom"),
+            height=int(arguments.get("height", 6)),
+            color=arguments.get("color", "yellow"),
+            force=arguments.get("force", False),
+        )
+        return {
+            "output": str(res_pb.output),
+            "position": res_pb.position,
+            "height": res_pb.height,
+            "color": res_pb.color,
+        }
+
+    if name == "detect_beats":
+        res_bt = detect_beats(arguments["source"], config)
+        return {
+            "total_beats": res_bt.total_beats,
+            "estimated_bpm": res_bt.estimated_bpm,
+            "beats_s": list(res_bt.beats_s),
+            "duration_s": res_bt.duration_s,
+        }
+
+    if name == "generate_narration":
+        res_nr = generate_narration(
+            arguments["text"],
+            arguments["output"],
+            config,
+            voice=arguments.get("voice"),
+            rate_wpm=int(arguments.get("rate_wpm", 175)),
+            video_source=arguments.get("video_source"),
+            start_s=float(arguments.get("start_s", 0.0)),
+            force=arguments.get("force", False),
+        )
+        return {
+            "output": str(res_nr.output),
+            "voice": res_nr.voice,
+            "duration_s": res_nr.duration_s,
+            "text": res_nr.text,
+        }
 
     raise MediaLabError(f"unknown tool {name!r}")
 
