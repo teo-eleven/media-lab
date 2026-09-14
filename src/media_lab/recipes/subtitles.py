@@ -131,13 +131,13 @@ def generate_subtitles(
                 saved_subs.write_text(ass_content, encoding="utf-8")
             created_sub_path = saved_subs
 
-        # Burn subtitles using libass in ffmpeg
+        escaped_sub_path = sub_tmp.as_posix().replace("\\", "/").replace(":", r"\:")
         run_ffmpeg(
             [
                 "-i",
                 str(resolved_source),
                 "-vf",
-                f"ass={sub_tmp}",
+                f"ass='{escaped_sub_path}'",
                 "-c:a",
                 "copy",
                 "-c:v",

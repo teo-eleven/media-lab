@@ -15,7 +15,7 @@ import numpy as np
 from PIL import Image
 
 from .config import Config
-from .ffmpeg import run_ffmpeg
+from .ffmpeg import measure_integrated_loudness, run_ffmpeg
 from .paths import ensure_readable_source, work_directory
 from .probe import probe
 
@@ -161,13 +161,20 @@ def inspect_media(path: Path | str, config: Config) -> InspectionReport:
 
     audio: AudioMetrics | None = None
     if info.has_audio:
-        # Measure RMS and loudness estimate
-        has_speech = info.duration_s > 0.2
-        audio = AudioMetrics(
-            has_speech=has_speech,
-            integrated_lufs=None,
-            rms_db=-24.0 if has_speech else None,
-        )
+        try:
+            lufs = measure_integrated_loudness(resolved, config)
+            has_speech = lufs > -60.0
+            audio = AudioMetrics(
+                has_speech=has_speech,
+                integrated_lufs=round(lufs, 1),
+                rms_db=round(lufs, 1) if has_speech else None,
+            )
+        except Exception:  # noqa: BLE001
+            audio = AudioMetrics(
+                has_speech=False,
+                integrated_lufs=None,
+                rms_db=None,
+            )
 
     return InspectionReport(
         file_path=resolved,
@@ -177,8 +184,8 @@ def inspect_media(path: Path | str, config: Config) -> InspectionReport:
         height=info.height,
         aspect_ratio=aspect,
         fps=round(info.fps, 2),
-        codec_video=info.pixel_format if info.has_video else None,
-        codec_audio="aac" if info.has_audio else None,
+        codec_video=info.codec_video or None,
+        codec_audio=info.codec_audio or None,
         visual=visual,
         audio=audio,
     )

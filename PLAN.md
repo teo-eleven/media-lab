@@ -489,7 +489,7 @@ orchestrare declarativă prompt-to-edit).
 
 ---
 
-### Pasul 5 — Code Review amplu, întărire securitate & documentație finală
+### Pasul 5 — Code Review amplu, întărire securitate & documentație finală — GATA
 - **Ce se adaugă**:
   - Revizuire a întregului codebase cu agenți specializați.
   - Verificare riguroasă: `make check` (zero linter warnings, zero mypy errors, 100% teste verzi cu coverage ≥ 80%).

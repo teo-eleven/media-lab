@@ -61,8 +61,17 @@ def main(argv: list[str] | None = None) -> int:
     os.makedirs(ns.out_dir, exist_ok=True)
 
     device = "mps" if torch.backends.mps.is_available() else "cpu"
-    net = MattingNetwork(ns.model).eval().to(device)
-    net.load_state_dict(torch.load(ns.weights, map_location="cpu", weights_only=True))
+    try:
+        net = MattingNetwork(ns.model).eval().to(device)
+        net.load_state_dict(torch.load(ns.weights, map_location="cpu", weights_only=True))
+    except Exception as exc:  # noqa: BLE001
+        if device == "mps":
+            sys.stderr.write(f"RVM load failed on MPS ({exc}), falling back to CPU...\n")
+            device = "cpu"
+            net = MattingNetwork(ns.model).eval().to("cpu")
+            net.load_state_dict(torch.load(ns.weights, map_location="cpu", weights_only=True))
+        else:
+            raise
 
     rec: list = [None] * 4
     per_frame = []
@@ -74,8 +83,20 @@ def main(argv: list[str] | None = None) -> int:
     for i, path in enumerate(frames, 1):
         rgb = np.asarray(Image.open(path).convert("RGB"))
         x = torch.from_numpy(rgb.copy()).permute(2, 0, 1).unsqueeze(0).float().div(255).to(device)
-        with torch.no_grad():
-            fgr, pha, *rec = net(x, *rec, downsample_ratio=ns.downsample)
+        try:
+            with torch.no_grad():
+                fgr, pha, *rec = net(x, *rec, downsample_ratio=ns.downsample)
+        except Exception as exc:  # noqa: BLE001
+            if device == "mps":
+                sys.stderr.write(f"RVM inference failed on MPS ({exc}), falling back to CPU...\n")
+                device = "cpu"
+                net = net.to("cpu")
+                x = x.to("cpu")
+                rec = [r.to("cpu") if isinstance(r, torch.Tensor) else None for r in rec]
+                with torch.no_grad():
+                    fgr, pha, *rec = net(x, *rec, downsample_ratio=ns.downsample)
+            else:
+                raise
         fg = (fgr[0].permute(1, 2, 0).cpu().numpy().clip(0, 1) * 255).astype(np.uint8)
         alpha = pha[0, 0].cpu().numpy().clip(0, 1) * 255.0
         if ns.alpha_lift or ns.alpha_gain != 1.0:

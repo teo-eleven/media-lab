@@ -10,6 +10,7 @@ import math
 from pathlib import Path
 
 from .config import Config
+from .errors import ValidationError
 from .ffmpeg import run_ffmpeg
 from .probe import probe
 
@@ -25,7 +26,7 @@ def extract_frames(source: Path, count: int, config: Config, dest_dir: Path) -> 
     equal slices, so the first and last are inset from the exact ends.
     """
     if count < 1:
-        raise ValueError(f"count must be at least 1, got {count}")
+        raise ValidationError(f"count must be at least 1, got {count}")
     dest_dir.mkdir(parents=True, exist_ok=True)
     for stale in dest_dir.glob("f-*.png"):
         stale.unlink()
@@ -61,7 +62,7 @@ def tile(
     """Tile every `f-*.png` in `frames_dir` into a `cols`-wide grid at `output`."""
     count = len(list(frames_dir.glob("f-*.png")))
     if count == 0:
-        raise ValueError(f"no f-*.png frames in {frames_dir}")
+        raise ValidationError(f"no f-*.png frames in {frames_dir}")
     rows = math.ceil(count / cols)
     run_ffmpeg(
         [

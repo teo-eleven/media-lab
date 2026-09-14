@@ -97,8 +97,24 @@ def main() -> None:
     try:
         _origin, separated = separator.separate_audio_file(input_path)
     except Exception as exc:  # noqa: BLE001
-        sys.stderr.write(f"Failed during Demucs separation: {exc}\n")
-        sys.exit(1)
+        if separator._device != "cpu":
+            sys.stderr.write(
+                f"Demucs separation failed on {separator._device} ({exc}), falling back to CPU...\n"
+            )
+            try:
+                separator = Separator(
+                    model=args.model,
+                    device="cpu",
+                    shifts=args.shifts,
+                    progress=False,
+                )
+                _origin, separated = separator.separate_audio_file(input_path)
+            except Exception as cpu_exc:  # noqa: BLE001
+                sys.stderr.write(f"Failed during Demucs separation on CPU fallback: {cpu_exc}\n")
+                sys.exit(1)
+        else:
+            sys.stderr.write(f"Failed during Demucs separation: {exc}\n")
+            sys.exit(1)
 
     ext = args.format
     if args.two_stems and args.two_stems != "none":

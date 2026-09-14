@@ -10,10 +10,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..config import Config, require_realesrgan
-from ..errors import MediaLabError, PathSafetyError
+from ..errors import MediaLabError
 from ..ffmpeg import run_ffmpeg
 from ..ml_runner import MlRunner
-from ..paths import ensure_readable_source, ensure_writable_output, work_directory
+from ..paths import (
+    ensure_readable_directory,
+    ensure_readable_source,
+    ensure_writable_directory,
+    ensure_writable_output,
+    work_directory,
+)
 from ..probe import MediaInfo, probe
 from ..validation import check_choice
 from ..verify import Expectations, verify_render
@@ -65,20 +71,16 @@ def upscale(
     check_choice(scale, SCALE_CHOICES, "scale")
     weight = require_realesrgan(config, scale=scale)
 
-    source_path = Path(source)
-    if not source_path.is_absolute():
-        source_path = (config.root / source_path).resolve()
+    source_raw = Path(source)
+    if source_raw.is_dir():
+        source_path = ensure_readable_directory(source_raw)
+        is_source_dir = True
+    else:
+        source_path = ensure_readable_source(source_raw)
+        is_source_dir = False
 
-    if not source_path.exists():
-        raise MediaLabError(f"source path does not exist: {source_path}")
-
-    is_source_dir = source_path.is_dir()
-
-    output_path = Path(output)
-    if not output_path.is_absolute():
-        output_path = (config.root / output_path).resolve()
-
-    is_output_video = output_path.suffix.lower() in (".mov", ".mp4", ".mkv", ".webm")
+    output_raw = Path(output)
+    is_output_video = output_raw.suffix.lower() in (".mov", ".mp4", ".mkv", ".webm")
 
     if is_source_dir and not is_output_video:
         frames = sorted(source_path.glob("f-*.png"))
@@ -87,10 +89,7 @@ def upscale(
         if not frames:
             raise MediaLabError(f"no PNG frames found in directory: {source_path}")
 
-        if output_path.exists() and any(output_path.iterdir()) and not force:
-            raise PathSafetyError(f"output directory is not empty: {output_path}")
-
-        output_path.mkdir(parents=True, exist_ok=True)
+        output_path = ensure_writable_directory(output_raw, config, force=force)
         ml_runner.run(
             _REALESRGAN_INFER,
             [
@@ -111,7 +110,7 @@ def upscale(
             scale=scale,
         )
 
-    resolved_output = ensure_writable_output(output_path, config, force=force)
+    resolved_output = ensure_writable_output(output_raw, config, force=force)
     stem = resolved_output.stem
 
     if is_source_dir:

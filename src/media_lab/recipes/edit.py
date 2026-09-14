@@ -13,6 +13,7 @@ from typing import Any
 
 from ..config import Config
 from ..edit_spec import EditSpec, parse_edit_spec
+from ..ffmpeg import run_ffmpeg
 from ..kino import KinoRunner
 from ..ml_runner import MlRunner
 from ..paths import ensure_readable_source, ensure_writable_output, work_directory
@@ -162,8 +163,14 @@ def run_edit_spec(
         )
         steps_executed.append("music_bed")
     else:
-        # Copy to final destination
-        shutil.copy2(current_clip, resolved_output)
+        # Copy or remux to final destination
+        if current_clip.suffix.lower() == resolved_output.suffix.lower():
+            shutil.copy2(current_clip, resolved_output)
+        else:
+            run_ffmpeg(
+                ["-i", str(current_clip), "-c", "copy", str(resolved_output)],
+                config,
+            )
         steps_executed.append("finalize")
 
     final_info = verify_render(

@@ -11,10 +11,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..config import Config
-from ..errors import ValidationError
+from ..errors import PathSafetyError, ValidationError
 from ..ffmpeg import run_ffmpeg
 from ..ml_runner import MlRunner
-from ..paths import ensure_readable_source, ensure_writable_output, work_directory
+from ..paths import (
+    ensure_readable_source,
+    ensure_writable_directory,
+    ensure_writable_output,
+    work_directory,
+)
 from ..probe import probe
 from ..validation import check_choice
 from ..verify import Expectations, verify_render
@@ -75,10 +80,21 @@ def separate_stems(
     if not source_info.has_audio:
         raise ValidationError(f"source has no audio stream to separate: {resolved_source}")
 
-    resolved_out_dir = Path(output_dir)
-    if not resolved_out_dir.is_absolute():
-        resolved_out_dir = (config.root / resolved_out_dir).resolve()
-    resolved_out_dir.mkdir(parents=True, exist_ok=True)
+    resolved_out_dir = ensure_writable_directory(output_dir, config, force=force)
+    expected_stems = (
+        [two_stems, f"no_{two_stems}"]
+        if two_stems != "none"
+        else ["vocals", "drums", "bass", "other"]
+    )
+    existing_stems = [
+        resolved_out_dir / f"{s}.{audio_format}"
+        for s in expected_stems
+        if (resolved_out_dir / f"{s}.{audio_format}").is_file()
+    ]
+    if existing_stems and not force:
+        raise PathSafetyError(
+            f"stem output already exists (pass force to overwrite): {existing_stems[0]}"
+        )
 
     work = work_directory(config, "stems")
     audio_to_separate = resolved_source

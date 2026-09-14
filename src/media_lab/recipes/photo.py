@@ -19,7 +19,13 @@ from ..config import Config
 from ..errors import MediaLabError, ValidationError
 from ..grounding import detect_foot_point, render_contact_shadow
 from ..kino import KinoRunner
-from ..paths import ensure_readable_source, ensure_writable_output
+from ..paths import (
+    ensure_readable_directory,
+    ensure_readable_source,
+    ensure_writable_directory,
+    ensure_writable_output,
+    work_path,
+)
 from ..recipes.cutout import cut_out_person
 from ..validation import check_choice
 
@@ -152,7 +158,7 @@ def edit_photo(
     if cutout:
         if runner is None:
             raise ValidationError("cutout requires KinoRunner to be provided")
-        tmp_cutout = resolved_output.parent / f"{resolved_source.stem}_cutout.png"
+        tmp_cutout = work_path(config, f"{resolved_source.stem}_cutout", ".png")
         cut_out_person(resolved_source, tmp_cutout, config, runner, force=True)
         working_source = tmp_cutout
 
@@ -253,16 +259,8 @@ def process_photo_batch(
     force: bool = False,
 ) -> BatchPhotoResult:
     """Process a directory of photos with uniform aspect framing and styling."""
-    src_dir = Path(source_dir)
-    if not src_dir.is_absolute():
-        src_dir = (config.root / src_dir).resolve()
-    if not src_dir.is_dir():
-        raise MediaLabError(f"source directory does not exist: {src_dir}")
-
-    out_dir = Path(output_dir)
-    if not out_dir.is_absolute():
-        out_dir = (config.root / out_dir).resolve()
-    out_dir.mkdir(parents=True, exist_ok=True)
+    src_dir = ensure_readable_directory(source_dir)
+    out_dir = ensure_writable_directory(output_dir, config, force=force)
 
     images = sorted(
         p for p in src_dir.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS

@@ -9,9 +9,15 @@ from PIL import Image
 
 from ..colour_transfer import RelightParams, apply_relight, transfer_colour
 from ..config import Config
-from ..errors import MediaLabError, PathSafetyError
+from ..errors import MediaLabError
 from ..ffmpeg import run_ffmpeg
-from ..paths import ensure_readable_source, ensure_writable_output, work_directory
+from ..paths import (
+    ensure_readable_directory,
+    ensure_readable_source,
+    ensure_writable_directory,
+    ensure_writable_output,
+    work_directory,
+)
 from ..probe import MediaInfo, probe
 from ..verify import Expectations, verify_render
 
@@ -46,28 +52,22 @@ def colour_match(
     """Match subject colour to background reference and apply scene relighting."""
     relight_settings = params or RelightParams()
 
-    source_path = Path(source)
-    if not source_path.is_absolute():
-        source_path = (config.root / source_path).resolve()
-    if not source_path.exists():
-        raise MediaLabError(f"source path does not exist: {source_path}")
+    source_raw = Path(source)
+    if source_raw.is_dir():
+        source_path = ensure_readable_directory(source_raw)
+        is_source_dir = True
+    else:
+        source_path = ensure_readable_source(source_raw)
+        is_source_dir = False
 
-    output_path = Path(output)
-    if not output_path.is_absolute():
-        output_path = (config.root / output_path).resolve()
+    output_raw = Path(output)
+    is_output_video = output_raw.suffix.lower() in (".mov", ".mp4", ".mkv", ".webm")
+    stem = output_raw.stem
 
     bg_img: Image.Image | None = None
     if bg_ref is not None:
-        bg_path = Path(bg_ref)
-        if not bg_path.is_absolute():
-            bg_path = (config.root / bg_path).resolve()
-        if not bg_path.exists():
-            raise MediaLabError(f"background reference path does not exist: {bg_path}")
+        bg_path = ensure_readable_source(bg_ref)
         bg_img = Image.open(bg_path).convert("RGB")
-
-    is_source_dir = source_path.is_dir()
-    is_output_video = output_path.suffix.lower() in (".mov", ".mp4", ".mkv", ".webm")
-    stem = output_path.stem
 
     if is_source_dir:
         frames_in = source_path
@@ -78,26 +78,23 @@ def colour_match(
         duration_s = len(frame_paths) / target_fps
         has_alpha = True
     else:
-        resolved_source = ensure_readable_source(source_path)
-        info = probe(resolved_source, config)
+        info = probe(source_path, config)
         if not info.has_video:
-            raise MediaLabError(f"source has no video stream: {resolved_source}")
+            raise MediaLabError(f"source has no video stream: {source_path}")
         target_fps = fps or (info.fps if info.fps > 0 else STILL_FPS_FALLBACK)
         duration_s = info.duration_s
         has_alpha = info.has_alpha
 
         frames_in = work_directory(config, f"{stem}-colour-src")
         _clear_frames(frames_in)
-        run_ffmpeg(["-i", str(resolved_source), str(frames_in / "f-%04d.png")], config)
+        run_ffmpeg(["-i", str(source_path), str(frames_in / "f-%04d.png")], config)
         frame_paths = sorted(frames_in.glob("f-*.png"))
 
     if not is_output_video:
-        if output_path.exists() and any(output_path.iterdir()) and not force:
-            raise PathSafetyError(f"output directory is not empty: {output_path}")
-        output_path.mkdir(parents=True, exist_ok=True)
+        output_path = ensure_writable_directory(output_raw, config, force=force)
         out_frames_dir = output_path
     else:
-        ensure_writable_output(output_path, config, force=force)
+        output_path = ensure_writable_output(output_raw, config, force=force)
         out_frames_dir = work_directory(config, f"{stem}-colour-frames")
         _clear_frames(out_frames_dir)
 

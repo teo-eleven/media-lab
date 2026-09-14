@@ -12,6 +12,7 @@ from pathlib import Path
 
 from ..config import Config
 from ..contact_sheet import extract_frames, side_by_side, tile
+from ..errors import ValidationError
 from ..ffmpeg import run_ffmpeg
 from ..paths import ensure_readable_source, ensure_writable_output, work_directory, work_path
 from ..verify import verify_render
@@ -67,7 +68,7 @@ def proxy_preview(
     (`compare` on the left, `source` on the right).
     """
     if frames < MIN_FRAMES:
-        raise ValueError(f"frames must be at least {MIN_FRAMES}, got {frames}")
+        raise ValidationError(f"frames must be at least {MIN_FRAMES}, got {frames}")
     resolved_source = ensure_readable_source(source)
     stem = resolved_source.stem
 

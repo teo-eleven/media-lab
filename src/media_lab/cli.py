@@ -136,7 +136,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     stems_cmd.add_argument("input", help="Source audio or video file")
     stems_cmd.add_argument(
-        "-o", "--out-dir", required=True, help="Directory to save separated stems"
+        "-o",
+        "--output",
+        "--out-dir",
+        dest="out_dir",
+        required=True,
+        help="Directory to save separated stems",
     )
     stems_cmd.add_argument(
         "--two-stems",

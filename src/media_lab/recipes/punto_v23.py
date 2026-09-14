@@ -32,9 +32,6 @@ FPS = 30
 FRAMES = 193
 OCCLUSION = {"height": 130, "feather": 70, "y": 3710}
 
-# Output placed directory where composed spec expects frames
-_PLACED_DIR = "work/punto-edit/isnet/placed"
-
 # NYC Wall St scene relighting profile from v23
 PUNTO_RELIGHT = RelightParams(
     ambient=(0.99, 1.00, 1.01),
@@ -112,7 +109,7 @@ def run_punto(
     colour_match(frames_to_relight, relit_dir, config, params=PUNTO_RELIGHT, force=True)
 
     # 4. Grounding and placement onto canvas
-    placed_dir = root / _PLACED_DIR
+    placed_dir = config.work_dir / "punto-edit/isnet/placed"
     effective_ground_y = PUNTO_GROUND_Y if CANVAS[1] >= PUNTO_GROUND_Y else int(CANVAS[1] * 0.9)
     ground_subject(
         relit_dir,
@@ -130,7 +127,7 @@ def run_punto(
 
     # 5. Composite according to spec
     spec_path = config.work_dir / "punto-v23.yaml"
-    spec_path.write_text(yaml.safe_dump(_spec_dict()), encoding="utf-8")
+    spec_path.write_text(yaml.safe_dump(_spec_dict(config)), encoding="utf-8")
     composed = compose(spec_path, resolved_output, config, force=force)
 
     # 6. Proxy preview and comparison sheet
@@ -150,7 +147,8 @@ def run_punto(
     )
 
 
-def _spec_dict() -> dict[str, object]:
+def _spec_dict(config: Config) -> dict[str, object]:
+    placed_dir = config.work_dir / "punto-edit/isnet/placed"
     return {
         "background": {
             "path": BACKGROUND,
@@ -160,7 +158,7 @@ def _spec_dict() -> dict[str, object]:
             "frames": FRAMES,
             "start_s": BG_START_S,
         },
-        "subject": {"frames": f"{_PLACED_DIR}/f-%04d.png", "fps": FPS},
+        "subject": {"frames": str(placed_dir / "f-%04d.png"), "fps": FPS},
         "occlusion": dict(OCCLUSION),
         "grade": {"profile": "v23"},
         "output": {"crf": 18, "preset": "medium"},

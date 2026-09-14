@@ -74,8 +74,17 @@ def main() -> None:
     try:
         result = model.transcribe(str(input_path), **transcribe_kwargs)
     except Exception as exc:  # noqa: BLE001
-        sys.stderr.write(f"Whisper transcription failed: {exc}\n")
-        sys.exit(1)
+        if device == "mps":
+            sys.stderr.write(f"Whisper inference failed on MPS ({exc}), falling back to CPU...\n")
+            try:
+                model = whisper.load_model(args.model, device="cpu")
+                result = model.transcribe(str(input_path), **transcribe_kwargs)
+            except Exception as cpu_exc:  # noqa: BLE001
+                sys.stderr.write(f"Whisper transcription failed on CPU fallback: {cpu_exc}\n")
+                sys.exit(1)
+        else:
+            sys.stderr.write(f"Whisper transcription failed: {exc}\n")
+            sys.exit(1)
 
     clean_segments = []
     for i, s in enumerate(result.get("segments", [])):
