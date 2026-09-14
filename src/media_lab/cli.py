@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from .colour_transfer import RelightParams
 from .config import Config, load_config
@@ -20,6 +21,7 @@ from .recipes.compose_spec import compose
 from .recipes.cutout import DEVICE_CHOICES, QUALITY_CHOICES, cut_out_person
 from .recipes.filters import LOOKS, apply_look, apply_look_chain
 from .recipes.matte_video import MODEL_CHOICES, matte_video
+from .recipes.photo import PHOTO_ASPECTS, PHOTO_LOOKS, edit_photo, process_photo_batch
 from .recipes.proxy_preview import proxy_preview
 from .recipes.punto_v23 import run_punto
 from .recipes.scale_plate import estimate_plate_scale
@@ -195,6 +197,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subs_cmd.add_argument(
         "--force", action="store_true", help="Overwrite existing output files"
+    )
+
+    photo_cmd = subcommands.add_parser(
+        "photo",
+        help="Edit social media photos (framing 1:1/4:5/9:16, backdrop, look, clarity)",
+    )
+    photo_cmd.add_argument("input", help="Source image or directory of images")
+    photo_cmd.add_argument(
+        "-o", "--output", required=True, help="Destination image file or directory"
+    )
+    photo_cmd.add_argument(
+        "--aspect",
+        default="original",
+        choices=list(PHOTO_ASPECTS),
+        help="Aspect ratio framing (default: original)",
+    )
+    photo_cmd.add_argument("--bg", help="New background image")
+    photo_cmd.add_argument(
+        "--look", choices=list(PHOTO_LOOKS), help="Curated visual look"
+    )
+    photo_cmd.add_argument(
+        "--sharpen", action="store_true", help="Apply clarity sharpening (unsharp mask)"
+    )
+    photo_cmd.add_argument(
+        "--cutout", action="store_true", help="Cut out subject from source before compositing"
+    )
+    photo_cmd.add_argument(
+        "--batch", action="store_true", help="Process directory of images in batch"
+    )
+    photo_cmd.add_argument(
+        "--force", action="store_true", help="Overwrite existing output"
     )
 
     backdrop = subcommands.add_parser("backdrop", help="Composite a cutout onto a backdrop")
@@ -469,6 +502,40 @@ def _run_subtitles(args: argparse.Namespace, config: Config, _runner: KinoRunner
     return 0
 
 
+def _run_photo(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    input_path = Path(args.input)
+    if args.batch or input_path.is_dir():
+        batch_res = process_photo_batch(
+            args.input,
+            args.output,
+            config,
+            runner,
+            aspect=args.aspect,
+            bg=args.bg,
+            look=args.look,
+            sharpen=args.sharpen,
+            force=args.force,
+        )
+        print(f"batch photo processed {len(batch_res.results)} images to {batch_res.output_dir}")
+        for r in batch_res.results:
+            print(f"  {r.output_path.name} ({r.width}x{r.height})")
+    else:
+        res = edit_photo(
+            args.input,
+            args.output,
+            config,
+            runner,
+            aspect=args.aspect,
+            bg=args.bg,
+            cutout=args.cutout,
+            look=args.look,
+            sharpen=args.sharpen,
+            force=args.force,
+        )
+        print(f"photo written to {res.output_path} ({res.width}x{res.height}, aspect {res.aspect})")
+    return 0
+
+
 def _run_backdrop(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
     result = place_on_backdrop(
         args.input,
@@ -629,6 +696,7 @@ HANDLERS = {
     "colour-match": _run_colour_match,
     "stems": _run_stems,
     "subtitles": _run_subtitles,
+    "photo": _run_photo,
     "backdrop": _run_backdrop,
     "filter": _run_filter,
     "compose": _run_compose,

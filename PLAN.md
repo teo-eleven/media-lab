@@ -460,7 +460,7 @@ orchestrare declarativă prompt-to-edit).
 
 ---
 
-### Pasul 3 — `photo` (Editare foto, carusele & schimbare fundal)
+### Pasul 3 — `photo` (Editare foto, carusele & schimbare fundal) — GATA
 - **Ce se adaugă**:
   - `src/media_lab/recipes/photo.py`: rețetă tipizată pentru editare de imagini statice:
     - decupare subiect (via `cutout` u2net).
