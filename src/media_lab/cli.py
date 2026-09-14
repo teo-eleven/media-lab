@@ -23,6 +23,7 @@ from .recipes.matte_video import MODEL_CHOICES, matte_video
 from .recipes.proxy_preview import proxy_preview
 from .recipes.punto_v23 import run_punto
 from .recipes.scale_plate import estimate_plate_scale
+from .recipes.stems import AUDIO_FORMAT_CHOICES, TWO_STEMS_CHOICES, separate_stems
 from .recipes.subject_ground import ground_subject
 from .recipes.to_short import to_short
 from .recipes.upscale import upscale
@@ -121,6 +122,49 @@ def build_parser() -> argparse.ArgumentParser:
     colour_cmd.add_argument("--sat", type=float, default=1.0, help="Saturation multiplier")
     colour_cmd.add_argument("--contrast", type=float, default=1.0, help="Contrast multiplier")
     colour_cmd.add_argument("--fps", type=float, help="Framerate override")
+
+    stems_cmd = subcommands.add_parser(
+        "stems",
+        help="Separate audio tracks into stems and isolate speech using Demucs",
+    )
+    stems_cmd.add_argument("input", help="Source audio or video file")
+    stems_cmd.add_argument(
+        "-o", "--out-dir", required=True, help="Directory to save separated stems"
+    )
+    stems_cmd.add_argument(
+        "--two-stems",
+        default="vocals",
+        choices=list(TWO_STEMS_CHOICES),
+        help="Separate selected stem vs remainder (default: vocals)",
+    )
+    stems_cmd.add_argument(
+        "--model", default="htdemucs", help="Demucs model name (default: htdemucs)"
+    )
+    stems_cmd.add_argument(
+        "--format",
+        dest="audio_format",
+        default="wav",
+        choices=list(AUDIO_FORMAT_CHOICES),
+        help="Audio format for stems (default: wav)",
+    )
+    stems_cmd.add_argument(
+        "--device",
+        default="auto",
+        choices=["auto", "mps", "cpu", "cuda"],
+        help="Device to run inference on (auto, mps, cpu, cuda)",
+    )
+    stems_cmd.add_argument(
+        "--clean-speech",
+        action="store_true",
+        help="Mux clean vocals back onto source video",
+    )
+    stems_cmd.add_argument(
+        "--clean-video-out",
+        help="Custom destination for cleaned video if --clean-speech is set",
+    )
+    stems_cmd.add_argument(
+        "--force", action="store_true", help="Overwrite existing output files"
+    )
 
     backdrop = subcommands.add_parser("backdrop", help="Composite a cutout onto a backdrop")
     _add_io_arguments(backdrop)
@@ -352,8 +396,26 @@ def _run_colour_match(args: argparse.Namespace, config: Config, _runner: KinoRun
     return 0
 
 
-
-
+def _run_stems(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    result = separate_stems(
+        args.input,
+        args.out_dir,
+        config,
+        MlRunner.from_config(config),
+        two_stems=args.two_stems,
+        model=args.model,
+        audio_format=args.audio_format,
+        device=args.device,
+        clean_speech=args.clean_speech,
+        output_video=args.clean_video_out,
+        force=args.force,
+    )
+    print(f"separated stems saved to {result.output_dir}:")
+    for name, path in sorted(result.stems.items()):
+        print(f"  {name}: {path}")
+    if result.cleaned_video is not None:
+        print(f"clean speech video: {result.cleaned_video}")
+    return 0
 
 
 def _run_backdrop(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
@@ -514,6 +576,7 @@ HANDLERS = {
     "ground": _run_ground,
     "scale-plate": _run_scale_plate,
     "colour-match": _run_colour_match,
+    "stems": _run_stems,
     "backdrop": _run_backdrop,
     "filter": _run_filter,
     "compose": _run_compose,

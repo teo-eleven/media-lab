@@ -424,3 +424,76 @@ robuste, testate și integrate în CLI.
   - `docs/video-agent/README.md`
 - **Depinde de**: Pașii 1–5.
 
+---
+
+# FAZA 3 — Extensii Audio/Video/Foto & Agent Prompt-to-Edit
+
+Completarea extensiilor native rămase din planul inițial (E1 subtitles, E2 stems, E4 photo)
+și construirea nucleului pentru agentul autonom media-lab (inspecție media profundă și
+orchestrare declarativă prompt-to-edit).
+
+## Pași de implementare
+
+### Pasul 1 — `stems` (Demucs audio separation & speech cleaning) — GATA
+- **Ce se adaugă**:
+  - `src/media_lab/ml/demucs_infer.py`: driver ML dedicat rulat prin `ml_runner` ca subprocess; suportă `--model` (`htdemucs`), `--two-stems` (`vocals`), selecție device auto/mps/cpu; extrage pista audio dacă inputul e video.
+  - `src/media_lab/recipes/stems.py`: rețetă tipizată `separate_stems`:
+    - separare piese în directorul țintă (`vocals.wav`, `no_vocals.wav`, sau 4-stems: `drums`, `bass`, `other`, `vocals`).
+    - mod `--clean-speech`: înlocuiește pista audio a unui fișier video cu vocea izolată curățată de zgomot.
+  - `src/media_lab/cli.py`: adăugare subcomandă `media-lab stems`.
+  - `tests/test_stems.py`: teste unitare și de integrare cu mock-uri de subprocess, verificări de formate, force guard și erori.
+- **Depinde de**: `demucs`, `ml_runner`.
+
+---
+
+### Pasul 2 — `subtitles` (Whisper speech-to-text + social subtitle styling/burning)
+- **Ce se adaugă**:
+  - `src/media_lab/ml/whisper_infer.py`: driver ML pentru Whisper local (`openai-whisper`), exportă segmente JSON cu timestamp-uri și cuvinte.
+  - `src/media_lab/subtitles.py`: generator avansat de fișiere ASS / SRT cu preseturi social media:
+    - `tiktok`: text centrat, bold, galben/alb, contur negru puternic, cuvânt activ evidențiat.
+    - `clean`: text minimalist jos, alb cu umbră discretă.
+    - `box`: fundal translucid rotunjit sub text pentru lizibilitate maximă.
+  - `src/media_lab/recipes/subtitles.py`: rețetă `generate_subtitles` care produce fișierul `.ass`/`.srt` sau îl arde direct pe video prin `ffmpeg -vf ass=...`.
+  - `src/media_lab/cli.py`: adăugare subcomandă `media-lab subtitles`.
+  - `tests/test_subtitles.py`: teste generare ASS, formatare culori/timpi, ardere pe clip sintetic.
+- **Depinde de**: `whisper`, `ffmpeg` (libass).
+
+---
+
+### Pasul 3 — `photo` (Editare foto, carusele & schimbare fundal)
+- **Ce se adaugă**:
+  - `src/media_lab/recipes/photo.py`: rețetă tipizată pentru editare de imagini statice:
+    - decupare subiect (via `cutout` u2net).
+    - înlocuire fundal cu scalare inteligentă (`cover` / `contain`) și ancorare la sol.
+    - transfer de culoare Reinhard Lab pentru integrare lumină fundal.
+    - preseturi de aspect ratio social media: `1:1` (feed Instagram), `4:5` (portret IG), `9:16` (Story), `16:9` (banner/YouTube).
+    - filtru / grading + claritate (unsharp mask).
+    - mod `--batch` pentru procesare foldere întregi de fotografii.
+  - `src/media_lab/cli.py`: adăugare subcomandă `media-lab photo`.
+  - `tests/test_photo.py`: teste pentru decupare, reîncadrare, transfer culoare, loturi de poze.
+- **Depinde de**: PIL, numpy, `cutout`, `colour_transfer`.
+
+---
+
+### Pasul 4 — `inspect` & `edit` (Ochii agentului & Orchestratorul declarativ)
+- **Ce se adaugă**:
+  - `src/media_lab/inspect.py`: analizor profund care returnează JSON structurat despre fișiere audio/video/foto:
+    - Video: durată, rezoluție, fps, bitrate, luminozitate medie, paletă culori dominante (RGB/Lab).
+    - Audio: LUFS integrat, RMS peak, detectare vorbire / silențiu, raport semnal/zgomot estimat.
+    - Persoană: detectare prezență siluetă umană, bounding box, raport înălțime/canvas.
+  - `src/media_lab/edit_spec.py` + `src/media_lab/recipes/edit.py`: executor declarativ `edit-spec`:
+    - Permite unui agent AI să definească într-un fișier YAML sau prin flag-uri operațiunile dorite (ex: curăță audio, reîncadrează la 9:16, aplică look cald, adaugă muzică de fundal ducked, generează subtitrări TikTok) și execută totul optimizat într-o singură trecere.
+  - `src/media_lab/cli.py`: subcomenzi `media-lab inspect` și `media-lab edit`.
+  - `tests/test_inspect.py` și `tests/test_edit.py`.
+- **Depinde de**: toate rețetele anterioare.
+
+---
+
+### Pasul 5 — Code Review amplu, întărire securitate & documentație finală
+- **Ce se adaugă**:
+  - Revizuire a întregului codebase cu agenți specializați.
+  - Verificare riguroasă: `make check` (zero linter warnings, zero mypy errors, 100% teste verzi cu coverage ≥ 80%).
+  - Actualizare completă `README.md`, `DECISIONS.md`, `PLAN.md`.
+  - Push pe noul branch git.
+
+
