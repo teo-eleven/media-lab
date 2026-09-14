@@ -3,6 +3,22 @@
 Technical decisions taken on this project, with the trade-off each one accepts.
 Newest first.
 
+## 2026-09-14 — Phase 4: Omnichannel Autonomous Studio (Audio Mastering, Silence Trim, SFX, Smart Reframe, Punch Zoom, B-Roll, Typography, Inpainting, Face Retouch, Natural Language Prompt Agent, and MCP Server)
+
+**Context.** Creating an end-to-end autonomous media creation suite required extending beyond basic cutting to full-studio creative capabilities:
+1. Audio Mastering & Pacing: vocal dynamics mastering (EQ, compand, de-esser, loudness normalization), silence/pause jump-cutting, and procedural sound effect synthesis (whooshes, pops, dings).
+2. Video Pacing & Cutaways: face/salience tracking vertical reframing, retention punch-in zooms, and B-roll cutaway overlays preserving continuous dialogue audio (L/J-cuts).
+3. Photo & Graphic Studio: dynamic typography and capsule badges with auto-wrap, content-aware object/blemish inpainting, edge-preserving portrait skin smoothing, and depth bokeh defocus blur.
+4. Autonomous Prompt Agent & Model Context Protocol (MCP): bilingual natural language prompt understanding translating vague requests to executable `EditSpec` pipelines, plus an MCP stdio server allowing Antigravity, Claude, and Cursor to execute all operations natively.
+
+**Chosen.**
+1. `recipes/audio_enhance.py` + `recipes/silence_trim.py` + `recipes/sfx.py`: Multi-stage FFmpeg audio mastering filtergraphs (highpass 80Hz, profile EQ, de-esser, compand, loudnorm -16 LUFS), silencedetect interval tracking with padding and `aresample=async=1000` drift correction, and pure procedural mathematical synthesis via `lavfi` (`anoisesrc`, `sine`, envelopes) with stereo alignment.
+2. `recipes/smart_reframe.py` + `recipes/punch_zoom.py` + `recipes/broll.py`: Median skin chrominance/contrast centroid tracking with fallback split-blur; dual-branch split-scale-overlay pattern for dynamic camera punch-ins bypassing FFmpeg static crop limitations; PTS-shifted cutaways with media probing to prevent missing stream crashes.
+3. `recipes/typography.py` + `recipes/inpainting.py` + `recipes/face_retouch.py`: PIL typography engine with pill capsule badges, drop shadows, and `-loop 1` video overlays; OpenCV Navier-Stokes/Telea inpainting for object and text erasure; feathered YCrCb bilateral skin smoothing preserving facial features with optional background depth blur.
+4. `prompt_agent.py` + `mcp_server.py`: Deterministic Romanian and English heuristic prompt interpreter parsing complex composite requests into typed `EditSpec` execution trees; JSON-RPC 2.0 stdio MCP server exposing media inspection, prompt orchestration, and 9 direct tool endpoints without external heavy framework dependencies.
+
+**Trade-off accepted.** Complex filtergraphs require precise stream formatting (explicit stereo layouts, sample rate normalization, PTS offsetting, and even dimension rounding), but allow 100% local Apple Silicon execution with zero cloud lock-in.
+
 ---
 
 ## 2026-09-14 — Phase 3: Demucs audio separation, Whisper ASS subtitles, Photo batch processing, Deep Inspection, and Declarative EditSpec Orchestrator

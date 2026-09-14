@@ -10,7 +10,7 @@ from pathlib import Path
 from .colour_transfer import RelightParams
 from .config import Config, load_config
 from .edit_spec import AudioEditSpec, EditSpec, SubtitleEditSpec, VideoEditSpec, parse_edit_spec
-from .errors import MediaLabError
+from .errors import MediaLabError, ValidationError
 from .inspect import inspect_media
 from .kino import KinoRunner
 from .mcp_server import run_mcp_server
@@ -37,7 +37,7 @@ from .recipes.punto_v23 import run_punto
 from .recipes.scale_plate import estimate_plate_scale
 from .recipes.sfx import SFX_KINDS, SfxCue, add_sfx
 from .recipes.silence_trim import trim_silence
-from .recipes.smart_reframe import VALID_RENAME_MODES, smart_reframe
+from .recipes.smart_reframe import VALID_REFRAME_MODES, smart_reframe
 from .recipes.stems import AUDIO_FORMAT_CHOICES, TWO_STEMS_CHOICES, separate_stems
 from .recipes.subject_ground import ground_subject
 from .recipes.subtitles import generate_subtitles
@@ -344,7 +344,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--aspect", default="9:16", choices=list(ASPECT_RATIOS), help="Target aspect ratio"
     )
     reframe_cmd.add_argument(
-        "--mode", default="smart", choices=list(VALID_RENAME_MODES), help="Reframe mode"
+        "--mode", default="smart", choices=list(VALID_REFRAME_MODES), help="Reframe mode"
     )
 
     zoom_cmd = subcommands.add_parser(
@@ -1072,9 +1072,16 @@ def _run_text_overlay(args: argparse.Namespace, config: Config, runner: KinoRunn
 def _run_inpaint(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
     bbox: tuple[int, int, int, int] | None = None
     if args.bbox:
-        parts = [int(p.strip()) for p in args.bbox.split(",")]
+        try:
+            parts = [int(p.strip()) for p in args.bbox.split(",")]
+        except ValueError:
+            raise ValidationError(
+                f"--bbox must be 'x,y,w,h' with 4 integer values, got: {args.bbox!r}"
+            ) from None
         if len(parts) != 4:
-            raise MediaLabError("--bbox must be 'x,y,w,h' with 4 integer values")
+            raise ValidationError(
+                f"--bbox must be 'x,y,w,h' with 4 integer values, got: {args.bbox!r}"
+            )
         bbox = (parts[0], parts[1], parts[2], parts[3])
 
     result = inpaint_image(

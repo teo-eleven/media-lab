@@ -147,6 +147,11 @@ def interpret_prompt(
             pos = "top"
         elif "mijloc" in p_lower or "center" in p_lower:
             pos = "center"
+        elif "jos" in p_lower or "bottom" in p_lower:
+            pos = "bottom"
+        elif subtitles_enabled:
+            # Default to top when subtitles are active to prevent badge collision
+            pos = "top"
         typo_spec = TypographyEditSpec(
             text=text_content,
             position=pos,

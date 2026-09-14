@@ -146,6 +146,8 @@ def retouch_portrait(
         raise ValidationError(f"skin_strength must be between 0.0 and 1.0, got {skin_strength}")
     if blur_sigma < 0.0 or blur_sigma > 60.0:
         raise ValidationError(f"blur_sigma must be between 0.0 and 60.0, got {blur_sigma}")
+    if not (0.0 <= radiance <= 1.0):
+        raise ValidationError(f"radiance must be between 0.0 and 1.0, got {radiance}")
 
     img_bgr = cv2.imread(str(resolved_source), cv2.IMREAD_COLOR)
     if img_bgr is None:

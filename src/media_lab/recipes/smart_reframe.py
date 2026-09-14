@@ -19,7 +19,7 @@ from ..paths import ensure_readable_source, ensure_writable_output
 from ..probe import MediaInfo, probe
 from ..verify import ASPECT_RATIOS, Expectations, verify_render
 
-DEFAULT_RENAME_RESOLUTIONS: dict[str, tuple[int, int]] = {
+DEFAULT_REFRAME_RESOLUTIONS: dict[str, tuple[int, int]] = {
     "9:16": (1080, 1920),
     "1:1": (1080, 1080),
     "4:5": (1080, 1350),
@@ -27,7 +27,7 @@ DEFAULT_RENAME_RESOLUTIONS: dict[str, tuple[int, int]] = {
     "16:9": (1920, 1080),
 }
 
-VALID_RENAME_MODES: frozenset[str] = frozenset({"smart", "center", "split"})
+VALID_REFRAME_MODES: frozenset[str] = frozenset({"smart", "center", "split"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,9 +207,9 @@ def smart_reframe(
             f"unsupported target_aspect {target_aspect!r}, supported: {sorted(ASPECT_RATIOS)}"
         )
 
-    if mode not in VALID_RENAME_MODES:
+    if mode not in VALID_REFRAME_MODES:
         raise ValidationError(
-            f"unsupported reframe mode {mode!r}, supported: {sorted(VALID_RENAME_MODES)}"
+            f"unsupported reframe mode {mode!r}, supported: {sorted(VALID_REFRAME_MODES)}"
         )
 
     source_info = probe(resolved_source, config)
@@ -221,7 +221,7 @@ def smart_reframe(
     aspect_ratio_num = ASPECT_RATIOS[target_aspect]
 
     # Resolve target dimensions
-    default_dims = DEFAULT_RENAME_RESOLUTIONS.get(target_aspect, (1080, 1920))
+    default_dims = DEFAULT_REFRAME_RESOLUTIONS.get(target_aspect, (1080, 1920))
     tw = target_width if target_width is not None else default_dims[0]
     th = target_height if target_height is not None else default_dims[1]
 
@@ -236,7 +236,7 @@ def smart_reframe(
         filtergraph = (
             f"[0:v]split=2[bg_in][fg_in];"
             f"[bg_in]scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th},boxblur=25:5[bg];"
-            f"[fg_in]scale={tw}:{th}:force_original_aspect_ratio=decrease[fg];"
+            f"[fg_in]scale={tw}:{th}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];"
             f"[bg][fg]overlay=(W-w)/2:(H-h)/2[out_v]"
         )
     else:

@@ -170,7 +170,11 @@ def enhance_audio(
     final_info = verify_render(
         resolved_output,
         config,
-        Expectations(duration_s=source_info.duration_s),
+        Expectations(
+            duration_s=source_info.duration_s,
+            requires_video=source_info.has_video,
+            requires_audio=True,
+        ),
     )
 
     return AudioEnhanceResult(

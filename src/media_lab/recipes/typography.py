@@ -333,6 +333,10 @@ def apply_typography(
     cmd: list[str] = [
         "-i",
         str(resolved_source),
+        "-loop",
+        "1",
+        "-t",
+        str(end_s),
         "-i",
         str(overlay_path),
         "-filter_complex",

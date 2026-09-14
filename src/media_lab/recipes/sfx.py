@@ -145,7 +145,8 @@ def add_sfx(
 
     # 1. Base audio stream
     if source_info.has_audio:
-        mix_inputs.append("[0:a]")
+        filter_chains.append("[0:a]aformat=channel_layouts=stereo:sample_rates=44100[base_a]")
+        mix_inputs.append("[base_a]")
     else:
         # Generate silence base track if source had no audio
         filter_chains.append(f"anullsrc=r=44100:cl=stereo:d={source_info.duration_s}[base_silence]")
@@ -157,7 +158,8 @@ def add_sfx(
         delay_ms = max(0, int(cue.at_s * 1000))
         label = f"[sfx_{i}]"
         filter_chains.append(
-            f"[{input_idx}:a]adelay={delay_ms}|{delay_ms},volume={cue.volume:.2f}{label}"
+            f"[{input_idx}:a]aformat=channel_layouts=stereo:sample_rates=44100,"
+            f"adelay={delay_ms}|{delay_ms},volume={cue.volume:.2f}{label}"
         )
         mix_inputs.append(label)
 

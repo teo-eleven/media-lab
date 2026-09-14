@@ -87,8 +87,19 @@ def insert_broll(
             )
         if not (0.0 <= cut.volume <= 2.0):
             raise ValidationError(f"cut {i} volume must be between 0.0 and 2.0, got {cut.volume}")
+
+        # Check if the B-roll asset actually contains an audio stream
+        effective_volume = 0.0
+        if cut.volume > 0.0 and p.suffix.lower() not in IMAGE_EXTENSIONS:
+            try:
+                b_info = probe(p, config)
+                if b_info.has_audio:
+                    effective_volume = cut.volume
+            except Exception:
+                effective_volume = 0.0
+
         resolved_cuts.append(
-            (p, cut.start_s, cut.duration_s, cut.transition, cut.fade_duration_s, cut.volume)
+            (p, cut.start_s, cut.duration_s, cut.transition, cut.fade_duration_s, effective_volume)
         )
 
     cmd: list[str] = ["-i", str(resolved_source)]
@@ -140,15 +151,16 @@ def insert_broll(
     current_a = "0:a" if source_info.has_audio else None
 
     if has_broll_audio and source_info.has_audio:
-        # Build audio mix
-        audio_streams: list[str] = ["[0:a]"]
+        # Build audio mix with standard stereo format to avoid channel layout mismatch
+        filter_chains.append("[0:a]aformat=channel_layouts=stereo:sample_rates=44100[src_a]")
+        audio_streams: list[str] = ["[src_a]"]
         for idx, (_p, start_s, dur_s, _trans, _fade, vol) in enumerate(resolved_cuts, start=1):
             if vol > 0.0:
                 broll_a = f"{idx}:a"
                 broll_adelay = f"adelay_{idx}"
                 delay_ms = int(start_s * 1000)
                 filter_chains.append(
-                    f"[{broll_a}]atrim=0:{dur_s},adelay={delay_ms}|{delay_ms},volume={vol}[{broll_adelay}]"
+                    f"[{broll_a}]aformat=channel_layouts=stereo:sample_rates=44100,atrim=0:{dur_s},adelay={delay_ms}|{delay_ms},volume={vol}[{broll_adelay}]"
                 )
                 audio_streams.append(f"[{broll_adelay}]")
 

@@ -58,6 +58,7 @@ def detect_silence_intervals(
     *,
     min_silence_s: float = DEFAULT_MIN_SILENCE_S,
     noise_db: float = DEFAULT_NOISE_THRESHOLD_DB,
+    total_duration_s: float | None = None,
 ) -> list[SilenceInterval]:
     """Detect silence segments in an audio or video file."""
     cmd = [
@@ -73,13 +74,27 @@ def detect_silence_intervals(
     stderr = res.stderr
 
     intervals: list[SilenceInterval] = []
-    starts = [float(m.group(1)) for m in SILENCE_START_PATTERN.finditer(stderr)]
-    ends = [float(m.group(1)) for m in SILENCE_END_PATTERN.finditer(stderr)]
+    current_start: float | None = None
 
-    # Pair starts with ends
-    for start, end in zip(starts, ends, strict=False):
-        if end > start:
-            intervals.append(SilenceInterval(start=start, end=end))
+    for line in stderr.splitlines():
+        m_start = SILENCE_START_PATTERN.search(line)
+        if m_start:
+            current_start = float(m_start.group(1))
+            continue
+        m_end = SILENCE_END_PATTERN.search(line)
+        if m_end and current_start is not None:
+            end = float(m_end.group(1))
+            if end > current_start:
+                intervals.append(SilenceInterval(start=current_start, end=end))
+            current_start = None
+
+    # If silence extends to end of file without an explicit silence_end tag
+    if (
+        current_start is not None
+        and total_duration_s is not None
+        and total_duration_s > current_start
+    ):
+        intervals.append(SilenceInterval(start=current_start, end=total_duration_s))
 
     return intervals
 
@@ -144,7 +159,11 @@ def trim_silence(
 
     total_duration = source_info.duration_s
     silence_intervals = detect_silence_intervals(
-        resolved_source, config, min_silence_s=min_silence_s, noise_db=noise_db
+        resolved_source,
+        config,
+        min_silence_s=min_silence_s,
+        noise_db=noise_db,
+        total_duration_s=total_duration,
     )
 
     keep_intervals = calculate_keep_intervals(
@@ -177,7 +196,7 @@ def trim_silence(
     if source_info.has_video:
         filtergraph = (
             f"[0:v]select='{select_expr}',setpts=N/FRAME_RATE/TB[v];"
-            f"[0:a]aselect='{select_expr}',asetpts=N/SR/TB[a]"
+            f"[0:a]aselect='{select_expr}',asetpts=N/SR/TB,aresample=async=1000[a]"
         )
         args.extend(
             [
