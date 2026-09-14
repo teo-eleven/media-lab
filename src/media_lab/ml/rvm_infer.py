@@ -30,10 +30,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("weights")
     p.add_argument("rvm_repo")
     p.add_argument("--downsample", type=float, default=0.375)
-    p.add_argument("--alpha-lift", type=float, default=0.0,
-                   help="subtract this from alpha before gain (v23 used 18)")
-    p.add_argument("--alpha-gain", type=float, default=1.0,
-                   help="multiply alpha after the lift (v23 used 1.28)")
+    p.add_argument(
+        "--alpha-lift",
+        type=float,
+        default=0.0,
+        help="subtract this from alpha before gain (v23 used 18)",
+    )
+    p.add_argument(
+        "--alpha-gain",
+        type=float,
+        default=1.0,
+        help="multiply alpha after the lift (v23 used 1.28)",
+    )
     return p.parse_args(argv)
 
 
@@ -59,8 +67,8 @@ def main(argv: list[str] | None = None) -> int:
     rec: list = [None] * 4
     per_frame = []
     prev_alpha = None
-    max_alpha = None          # running per-pixel max, to find ever-foreground px
-    sum_abs_delta = None      # running per-pixel sum of |alpha[t] - alpha[t-1]|
+    max_alpha = None  # running per-pixel max, to find ever-foreground px
+    sum_abs_delta = None  # running per-pixel sum of |alpha[t] - alpha[t-1]|
     t0 = time.time()
 
     for i, path in enumerate(frames, 1):
@@ -77,9 +85,7 @@ def main(argv: list[str] | None = None) -> int:
         Image.fromarray(np.dstack([fg, a8]), "RGBA").save(
             os.path.join(ns.out_dir, f"f-{i:04d}.png")
         )
-        per_frame.append(
-            {"frame": i, "alpha_mean": float(a8.mean()), "alpha_var": float(a8.var())}
-        )
+        per_frame.append({"frame": i, "alpha_mean": float(a8.mean()), "alpha_var": float(a8.var())})
 
         af = a8.astype(np.float32)
         if prev_alpha is None:
@@ -103,13 +109,15 @@ def main(argv: list[str] | None = None) -> int:
 
     with open(os.path.join(ns.out_dir, "stats.json"), "w", encoding="utf-8") as fh:
         json.dump(
-            {"model": ns.model, "device": device, "frames": per_frame,
-             "stability_score": score},
+            {"model": ns.model, "device": device, "frames": per_frame, "stability_score": score},
             fh,
             indent=2,
         )
-    print(f"rvm_infer: {len(frames)} frames, {ns.model} on {device}, "
-          f"{time.time() - t0:.1f}s, stability_score {score:.2f}", flush=True)
+    print(
+        f"rvm_infer: {len(frames)} frames, {ns.model} on {device}, "
+        f"{time.time() - t0:.1f}s, stability_score {score:.2f}",
+        flush=True,
+    )
     return 0
 
 

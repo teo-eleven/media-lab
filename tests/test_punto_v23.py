@@ -49,8 +49,7 @@ def _mock_ml(self: MlRunner, script: Path, args: Sequence[str] = (), **kw: objec
             _write_rgba(out_dir / f"f-{i:04d}.png", SMALL_W, SMALL_H, tint=200)
             stats.append({"frame": i, "alpha_mean": 90.0, "alpha_var": 100.0})
         (out_dir / "stats.json").write_text(
-            json.dumps({"model": "x", "device": "cpu", "frames": stats,
-                        "stability_score": 3.3})
+            json.dumps({"model": "x", "device": "cpu", "frames": stats, "stability_score": 3.3})
         )
     elif name == "realesrgan_infer.py":
         frames_in, out_dir = Path(list(args)[0]), Path(list(args)[1])
@@ -81,16 +80,34 @@ def punto_scene(config: Config, monkeypatch: pytest.MonkeyPatch) -> None:
     (config.in_dir / "punto-source.mp4").parent.mkdir(parents=True, exist_ok=True)
     _ffmpeg(
         config,
-        ["-f", "lavfi", "-i", f"testsrc=size={SMALL_W}x{SMALL_H}:rate={FPS}:duration=1",
-         "-frames:v", str(SMALL_FRAMES), "-c:v", "libx264", "-pix_fmt", "yuv420p",
-         str(config.in_dir / "punto-source.mp4")],
+        [
+            "-f",
+            "lavfi",
+            "-i",
+            f"testsrc=size={SMALL_W}x{SMALL_H}:rate={FPS}:duration=1",
+            "-frames:v",
+            str(SMALL_FRAMES),
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(config.in_dir / "punto-source.mp4"),
+        ],
     )
     (config.in_dir / "backgrounds").mkdir(parents=True, exist_ok=True)
     _ffmpeg(
         config,
-        ["-f", "lavfi", "-i", f"color=c=gray:size={SMALL_W}x{SMALL_H}:rate={FPS}:duration=2",
-         "-c:v", "libx264", "-pix_fmt", "yuv420p",
-         str(config.in_dir / "backgrounds" / "nyc-wallst.mp4")],
+        [
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c=gray:size={SMALL_W}x{SMALL_H}:rate={FPS}:duration=2",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(config.in_dir / "backgrounds" / "nyc-wallst.mp4"),
+        ],
     )
 
 
@@ -120,7 +137,6 @@ def test_full_chain_runs_and_renders(config: Config, punto_scene: None) -> None:
     assert result.matte.model == "resnet50"
 
 
-
 def test_missing_source_is_reported(config: Config, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(MlRunner, "run", _mock_ml)
     with pytest.raises(Exception, match="punto source"):
@@ -145,8 +161,11 @@ def test_real_proxy_acceptance(tmp_path: Path) -> None:
             pytest.skip(f"missing {rel}")
 
     result = run_punto(
-        config, MlRunner.from_config(config),
-        config.work_dir / "punto-acceptance-proxy.mp4", proxy=True, force=True,
+        config,
+        MlRunner.from_config(config),
+        config.work_dir / "punto-acceptance-proxy.mp4",
+        proxy=True,
+        force=True,
     )
     assert (result.composed.media.width, result.composed.media.height) == (2160, 3840)
     assert result.composed.media.duration_s == pytest.approx(6.433, abs=0.1)

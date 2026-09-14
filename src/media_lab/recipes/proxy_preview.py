@@ -31,9 +31,22 @@ class ProxyResult:
 
 def _encode_proxy(source: Path, height: int, output: Path, config: Config) -> None:
     run_ffmpeg(
-        ["-i", str(source), "-vf", f"scale=-2:{height}",
-         "-c:v", "libx264", "-preset", "veryfast", "-crf", "30",
-         "-an", "-movflags", "+faststart", str(output)],
+        [
+            "-i",
+            str(source),
+            "-vf",
+            f"scale=-2:{height}",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "30",
+            "-an",
+            "-movflags",
+            "+faststart",
+            str(output),
+        ],
         config,
     )
 
@@ -63,8 +76,12 @@ def proxy_preview(
     verify_render(proxy, config)
 
     sheet = ensure_writable_output(work_path(config, f"{stem}-sheet", ".jpg"), config, force=force)
-    tile(extract_frames(proxy, frames, config, work_directory(config, f"{stem}-cs")),
-         sheet, config, cols=cols)
+    tile(
+        extract_frames(proxy, frames, config, work_directory(config, f"{stem}-cs")),
+        sheet,
+        config,
+        cols=cols,
+    )
 
     comparison: Path | None = None
     if compare is not None:
@@ -72,8 +89,12 @@ def proxy_preview(
         ref_proxy = work_path(config, f"{stem}-cmp-proxy", ".mp4")
         _encode_proxy(reference, height, ref_proxy, config)
         ref_sheet = work_path(config, f"{stem}-cmp-sheet", ".jpg")
-        tile(extract_frames(ref_proxy, frames, config, work_directory(config, f"{stem}-cs-cmp")),
-             ref_sheet, config, cols=cols)
+        tile(
+            extract_frames(ref_proxy, frames, config, work_directory(config, f"{stem}-cs-cmp")),
+            ref_sheet,
+            config,
+            cols=cols,
+        )
         comparison = ensure_writable_output(
             work_path(config, f"{stem}-vs", ".jpg"), config, force=force
         )

@@ -9,7 +9,9 @@ from pathlib import Path
 
 from .colour_transfer import RelightParams
 from .config import Config, load_config
+from .edit_spec import AudioEditSpec, EditSpec, SubtitleEditSpec, VideoEditSpec, parse_edit_spec
 from .errors import MediaLabError
+from .inspect import inspect_media
 from .kino import KinoRunner
 from .ml_runner import MlRunner
 from .paths import clear_work_directory
@@ -19,6 +21,7 @@ from .recipes.backdrop import place_on_backdrop
 from .recipes.colour_match import colour_match
 from .recipes.compose_spec import compose
 from .recipes.cutout import DEVICE_CHOICES, QUALITY_CHOICES, cut_out_person
+from .recipes.edit import run_edit_spec
 from .recipes.filters import LOOKS, apply_look, apply_look_chain
 from .recipes.matte_video import MODEL_CHOICES, matte_video
 from .recipes.photo import PHOTO_ASPECTS, PHOTO_LOOKS, edit_photo, process_photo_batch
@@ -166,9 +169,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--clean-video-out",
         help="Custom destination for cleaned video if --clean-speech is set",
     )
-    stems_cmd.add_argument(
-        "--force", action="store_true", help="Overwrite existing output files"
-    )
+    stems_cmd.add_argument("--force", action="store_true", help="Overwrite existing output files")
 
     subs_cmd = subcommands.add_parser(
         "subtitles",
@@ -195,9 +196,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--save-subs",
         help="Also save subtitle file (.ass or .srt) when burning to video",
     )
-    subs_cmd.add_argument(
-        "--force", action="store_true", help="Overwrite existing output files"
-    )
+    subs_cmd.add_argument("--force", action="store_true", help="Overwrite existing output files")
 
     photo_cmd = subcommands.add_parser(
         "photo",
@@ -214,9 +213,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Aspect ratio framing (default: original)",
     )
     photo_cmd.add_argument("--bg", help="New background image")
-    photo_cmd.add_argument(
-        "--look", choices=list(PHOTO_LOOKS), help="Curated visual look"
-    )
+    photo_cmd.add_argument("--look", choices=list(PHOTO_LOOKS), help="Curated visual look")
     photo_cmd.add_argument(
         "--sharpen", action="store_true", help="Apply clarity sharpening (unsharp mask)"
     )
@@ -226,9 +223,39 @@ def build_parser() -> argparse.ArgumentParser:
     photo_cmd.add_argument(
         "--batch", action="store_true", help="Process directory of images in batch"
     )
-    photo_cmd.add_argument(
-        "--force", action="store_true", help="Overwrite existing output"
+    photo_cmd.add_argument("--force", action="store_true", help="Overwrite existing output")
+
+    inspect_cmd = subcommands.add_parser(
+        "inspect",
+        help="Deep inspection of media returning structured ground-truth metrics",
     )
+    inspect_cmd.add_argument("input", help="Media file to inspect")
+    inspect_cmd.add_argument(
+        "--json", action="store_true", help="Output raw JSON (for LLM agents and scripts)"
+    )
+
+    edit_cmd = subcommands.add_parser(
+        "edit",
+        help="Declarative end-to-end editing from prompt parameters or edit-spec YAML",
+    )
+    edit_cmd.add_argument(
+        "input", nargs="?", default=None, help="Source media file or edit-spec YAML file"
+    )
+    edit_cmd.add_argument("-o", "--output", help="Destination output path")
+    edit_cmd.add_argument("--spec", help="Path to edit-spec YAML file")
+    edit_cmd.add_argument(
+        "--target", default="original", help="Target aspect ratio (9:16, 1:1, 4:5, 16:9)"
+    )
+    edit_cmd.add_argument(
+        "--clean-speech", action="store_true", help="Clean voice and remove noise"
+    )
+    edit_cmd.add_argument("--look", help="Visual look (warm, cool, cinematic, etc.)")
+    edit_cmd.add_argument("--subtitles", action="store_true", help="Generate and burn subtitles")
+    edit_cmd.add_argument(
+        "--sub-style", default="tiktok", help="Subtitle style (tiktok, clean, box)"
+    )
+    edit_cmd.add_argument("--music", help="Background music track to mix with ducking")
+    edit_cmd.add_argument("--force", action="store_true", help="Overwrite existing output")
 
     backdrop = subcommands.add_parser("backdrop", help="Composite a cutout onto a backdrop")
     _add_io_arguments(backdrop)
@@ -536,6 +563,72 @@ def _run_photo(args: argparse.Namespace, config: Config, runner: KinoRunner) -> 
     return 0
 
 
+def _run_inspect(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    report = inspect_media(args.input, config)
+    if args.json:
+        print(report.to_json())
+    else:
+        print(f"media inspection: {report.file_path}")
+        print(f"  type:         {report.media_type}")
+        print(f"  dimensions:   {report.width}x{report.height} ({report.aspect_ratio})")
+        print(f"  duration:     {report.duration_s:.2f}s @ {report.fps:.1f} fps")
+        if report.visual is not None:
+            print(
+                f"  brightness:   {report.visual.brightness_mean:.1f}, "
+                f"contrast {report.visual.contrast_std:.1f}"
+            )
+            print(f"  palette:      {', '.join(report.visual.dominant_colors)}")
+            print(f"  silhouette:   {report.visual.has_human_silhouette}")
+        if report.audio is not None:
+            print(f"  speech:       {report.audio.has_speech}")
+            if report.audio.rms_db is not None:
+                print(f"  rms level:    {report.audio.rms_db:.1f} dB")
+    return 0
+
+
+def _run_edit(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    ml_runner = MlRunner.from_config(config)
+    if args.spec:
+        spec = parse_edit_spec(Path(args.spec))
+    elif args.input and str(args.input).endswith((".yaml", ".yml", ".json")):
+        spec = parse_edit_spec(Path(args.input))
+    elif args.input:
+        input_str = str(args.input)
+        if not args.output:
+            print(
+                "error: --output (-o) is required when specifying direct edit flags",
+                file=sys.stderr,
+            )
+            return 1
+        video_spec = VideoEditSpec(
+            aspect=args.target,
+            look=args.look,
+            subtitles=SubtitleEditSpec(
+                enabled=args.subtitles,
+                style=args.sub_style,
+            ),
+        )
+        audio_spec = AudioEditSpec(
+            clean_speech=args.clean_speech,
+            music_track=args.music,
+        )
+        spec = EditSpec(
+            source=input_str,
+            output=str(args.output),
+            video=video_spec,
+            audio=audio_spec,
+        )
+    else:
+        print("error: must provide either an input file or --spec <path>", file=sys.stderr)
+        return 1
+
+    result = run_edit_spec(spec, config, runner, ml_runner, force=args.force)
+    print(f"edit finished: {result.output}")
+    print(f"  steps executed: {', '.join(result.steps_executed)}")
+    print(f"  output: {result.media.width}x{result.media.height}, {result.media.duration_s:.2f}s")
+    return 0
+
+
 def _run_backdrop(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
     result = place_on_backdrop(
         args.input,
@@ -697,6 +790,8 @@ HANDLERS = {
     "stems": _run_stems,
     "subtitles": _run_subtitles,
     "photo": _run_photo,
+    "inspect": _run_inspect,
+    "edit": _run_edit,
     "backdrop": _run_backdrop,
     "filter": _run_filter,
     "compose": _run_compose,

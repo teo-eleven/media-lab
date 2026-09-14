@@ -97,6 +97,4 @@ def compose(
             requires_audio=False,
         ),
     )
-    return ComposeResult(
-        media=media, spec_path=resolved_spec, filtergraph_path=filtergraph_path
-    )
+    return ComposeResult(media=media, spec_path=resolved_spec, filtergraph_path=filtergraph_path)

@@ -18,10 +18,23 @@ def other_clip(config: Config) -> Path:
     """A second, visually different clip for --compare."""
     path = config.in_dir / "other.mp4"
     subprocess.run(
-        [str(config.ffmpeg), "-y", "-loglevel", "error",
-         "-f", "lavfi", "-i", "color=c=blue:size=480x270:rate=25:duration=2",
-         "-c:v", "libx264", "-pix_fmt", "yuv420p", str(path)],
-        check=True, capture_output=True,
+        [
+            str(config.ffmpeg),
+            "-y",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=blue:size=480x270:rate=25:duration=2",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
     )
     return path
 

@@ -475,7 +475,7 @@ orchestrare declarativă prompt-to-edit).
 
 ---
 
-### Pasul 4 — `inspect` & `edit` (Ochii agentului & Orchestratorul declarativ)
+### Pasul 4 — `inspect` & `edit` (Ochii agentului & Orchestratorul declarativ) — GATA
 - **Ce se adaugă**:
   - `src/media_lab/inspect.py`: analizor profund care returnează JSON structurat despre fișiere audio/video/foto:
     - Video: durată, rezoluție, fps, bitrate, luminozitate medie, paletă culori dominante (RGB/Lab).

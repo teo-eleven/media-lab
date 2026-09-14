@@ -30,17 +30,33 @@ def scene(config: Config) -> dict[str, str]:
     bg = config.in_dir / "bg.mp4"
     _ffmpeg(
         config,
-        ["-f", "lavfi", "-i", f"testsrc=size={CANVAS_W}x{CANVAS_H}:rate={FPS}:duration=1",
-         "-c:v", "libx264", "-pix_fmt", "yuv420p", str(bg)],
+        [
+            "-f",
+            "lavfi",
+            "-i",
+            f"testsrc=size={CANVAS_W}x{CANVAS_H}:rate={FPS}:duration=1",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(bg),
+        ],
     )
     placed = config.in_dir / "placed"
     placed.mkdir()
     _ffmpeg(
         config,
-        ["-f", "lavfi", "-i",
-         f"color=c=red:size={CANVAS_W}x{CANVAS_H}:rate={FPS}:duration={FRAMES / FPS}",
-         "-vf", "format=rgba,colorchannelmixer=aa=0.5", "-frames:v", str(FRAMES),
-         str(placed / "f-%04d.png")],
+        [
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c=red:size={CANVAS_W}x{CANVAS_H}:rate={FPS}:duration={FRAMES / FPS}",
+            "-vf",
+            "format=rgba,colorchannelmixer=aa=0.5",
+            "-frames:v",
+            str(FRAMES),
+            str(placed / "f-%04d.png"),
+        ],
     )
     return {"bg": "in/bg.mp4", "frames": "in/placed/f-%04d.png"}
 
@@ -48,8 +64,12 @@ def scene(config: Config) -> dict[str, str]:
 def _spec_file(config: Config, scene: dict[str, str], **grade: object) -> Path:
     raw: dict[str, object] = {
         "background": {
-            "path": scene["bg"], "width": CANVAS_W, "height": CANVAS_H,
-            "fps": FPS, "frames": FRAMES, "start_s": 0.0,
+            "path": scene["bg"],
+            "width": CANVAS_W,
+            "height": CANVAS_H,
+            "fps": FPS,
+            "frames": FRAMES,
+            "start_s": 0.0,
         },
         "subject": {"frames": scene["frames"], "fps": FPS},
         "occlusion": {"height": 30, "feather": 10, "y": 400},
@@ -73,9 +93,7 @@ def test_renders_the_spec_and_keeps_the_filtergraph(config: Config, scene: dict[
 
 
 def test_grade_none_still_renders(config: Config, scene: dict[str, str]) -> None:
-    result = compose(
-        _spec_file(config, scene, profile="none"), config.out_dir / "shot.mp4", config
-    )
+    result = compose(_spec_file(config, scene, profile="none"), config.out_dir / "shot.mp4", config)
     assert (result.media.width, result.media.height) == (CANVAS_W, CANVAS_H)
 
 
@@ -86,8 +104,17 @@ def test_rejects_a_subject_frame_that_is_not_canvas_size(
     wrong.mkdir()
     _ffmpeg(
         config,
-        ["-f", "lavfi", "-i", f"color=c=blue:size=100x100:rate={FPS}:duration=0.5",
-         "-vf", "format=rgba", "-frames:v", str(FRAMES), str(wrong / "f-%04d.png")],
+        [
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c=blue:size=100x100:rate={FPS}:duration=0.5",
+            "-vf",
+            "format=rgba",
+            "-frames:v",
+            str(FRAMES),
+            str(wrong / "f-%04d.png"),
+        ],
     )
     raw = yaml.safe_load(_spec_file(config, scene).read_text())
     raw["subject"]["frames"] = "in/wrong/f-%04d.png"
