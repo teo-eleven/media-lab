@@ -13,7 +13,7 @@ from pathlib import Path
 from ..config import Config
 from ..ffmpeg import run_ffmpeg
 from ..paths import ensure_readable_source, ensure_writable_output, work_path
-from ..probe import MediaInfo
+from ..probe import MediaInfo, probe
 from ..verify import Expectations, verify_render
 
 
@@ -41,6 +41,8 @@ def stabilize_video(
 
     trans_file = work_path(config, f"vidstab_{resolved_source.stem}", ".trf")
 
+    source_info = probe(resolved_source, config)
+
     # Pass 1: Motion detection
     pass1_cmd = [
         "-i",
@@ -63,10 +65,13 @@ def stabilize_video(
         "libx264",
         "-pix_fmt",
         "yuv420p",
-        "-c:a",
-        "copy",
-        str(resolved_output),
     ]
+    if source_info.has_audio:
+        pass2_cmd.extend(["-c:a", "copy"])
+    else:
+        pass2_cmd.append("-an")
+
+    pass2_cmd.append(str(resolved_output))
     run_ffmpeg(pass2_cmd, config)
 
     # Clean up intermediate transform log
@@ -74,7 +79,11 @@ def stabilize_video(
         with contextlib.suppress(OSError):
             trans_file.unlink()
 
-    media_info = verify_render(resolved_output, config, Expectations(requires_video=True))
+    media_info = verify_render(
+        resolved_output,
+        config,
+        Expectations(requires_video=True, requires_audio=source_info.has_audio),
+    )
 
     return StabilizeResult(
         output=resolved_output,

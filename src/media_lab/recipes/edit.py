@@ -24,6 +24,7 @@ from ..recipes.audio_bed import add_music_bed
 from ..recipes.audio_enhance import enhance_audio
 from ..recipes.backdrop import place_on_backdrop
 from ..recipes.broll import BrollCut, insert_broll
+from ..recipes.camera_motion import apply_camera_motion
 from ..recipes.face_retouch import retouch_portrait
 from ..recipes.filters import apply_look, apply_look_chain
 from ..recipes.inpainting import inpaint_image
@@ -409,6 +410,20 @@ def run_edit_spec(
         cmd.extend(["-c:v", "libx264", "-pix_fmt", "yuv420p", str(geo_video)])
         run_ffmpeg(cmd, config)
         current_clip = geo_video
+
+    # 4c. Cinematic Camera Motion & Kinetic Tracking
+    if spec.video.camera_motion:
+        cam_video = work / "step4c_camera_motion.mp4"
+        apply_camera_motion(
+            current_clip,
+            cam_video,
+            config,
+            motion=spec.video.camera_motion,
+            smoothing=spec.video.camera_smoothing,
+            force=True,
+        )
+        current_clip = cam_video
+        steps_executed.append(f"camera_motion_{spec.video.camera_motion}")
 
     # 5. Reframing / vertical social format
     if spec.video.aspect != "original":

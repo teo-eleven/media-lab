@@ -150,6 +150,75 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "stabilize_video",
+        "description": (
+            "2-pass camera motion stabilization using VidStab. Neutralizes camera jitter, "
+            "compensates for manual zoom-out/zoom-in glitches, and produces steady framing."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "Input video path"},
+                "output": {"type": "string", "description": "Destination video path"},
+                "smoothing": {
+                    "type": "integer",
+                    "default": 20,
+                    "description": "Frames for motion smoothing trajectory",
+                },
+                "shakiness": {
+                    "type": "integer",
+                    "default": 8,
+                    "description": "Detection shakiness 1-10",
+                },
+                "force": {"type": "boolean", "default": False},
+            },
+            "required": ["source", "output"],
+        },
+    },
+    {
+        "name": "apply_camera_motion",
+        "description": (
+            "Apply dynamic camera motion to video: kinetic subject tracking "
+            "(smooth camera follow), cinematic push-in zoom, pull-out zoom, "
+            "smooth directional pans, or handheld organic drift."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "Input video path"},
+                "output": {"type": "string", "description": "Destination video path"},
+                "motion": {
+                    "type": "string",
+                    "enum": [
+                        "track",
+                        "follow",
+                        "push_in",
+                        "slow_zoom_in",
+                        "pull_out",
+                        "slow_zoom_out",
+                        "pan_left",
+                        "pan_right",
+                        "handheld",
+                    ],
+                    "default": "track",
+                    "description": "Camera motion type",
+                },
+                "zoom_factor": {
+                    "type": "number",
+                    "default": 1.15,
+                    "description": "Scale crop factor (default 1.15)",
+                },
+                "smoothing": {
+                    "type": "number",
+                    "default": 1.5,
+                    "description": "Temporal smoothing inertia in seconds (default 1.5)",
+                },
+                "force": {"type": "boolean", "default": False},
+            },
+            "required": ["source", "output"],
+        },
+    },
+    {
         "name": "apply_typography",
         "description": (
             "Overlay styled title badges, capsules, and lower-thirds with drop shadow "
@@ -489,6 +558,49 @@ def dispatch_tool(name: str, arguments: dict[str, Any], config: Config) -> dict[
             "voice": res_nr.voice,
             "duration_s": res_nr.duration_s,
             "text": res_nr.text,
+        }
+
+    if name == "stabilize_video":
+        from .recipes.stabilize import stabilize_video
+
+        res_st = stabilize_video(
+            arguments["source"],
+            arguments["output"],
+            config,
+            smoothing=int(arguments.get("smoothing", 20)),
+            shakiness=int(arguments.get("shakiness", 8)),
+            force=bool(arguments.get("force", False)),
+        )
+        return {
+            "output": str(res_st.output),
+            "smoothing": res_st.smoothing,
+            "media": {
+                "duration_s": res_st.media.duration_s,
+                "width": res_st.media.width,
+                "height": res_st.media.height,
+            },
+        }
+
+    if name == "apply_camera_motion":
+        from .recipes.camera_motion import apply_camera_motion
+
+        res_cm = apply_camera_motion(
+            arguments["source"],
+            arguments["output"],
+            config,
+            motion=str(arguments.get("motion", "track")),
+            zoom_factor=float(arguments.get("zoom_factor", 1.15)),
+            smoothing=float(arguments.get("smoothing", 1.5)),
+            force=bool(arguments.get("force", False)),
+        )
+        return {
+            "output": str(res_cm.output),
+            "motion": res_cm.motion,
+            "media": {
+                "duration_s": res_cm.media.duration_s,
+                "width": res_cm.media.width,
+                "height": res_cm.media.height,
+            },
         }
 
     raise MediaLabError(f"unknown tool {name!r}")

@@ -25,6 +25,7 @@ from .recipes.audio_enhance import VOICE_PROFILES, enhance_audio
 from .recipes.backdrop import place_on_backdrop
 from .recipes.beat_sync import detect_beats
 from .recipes.broll import BrollCut, insert_broll
+from .recipes.camera_motion import VALID_CAMERA_MOTIONS, apply_camera_motion
 from .recipes.colour_match import colour_match
 from .recipes.compose_spec import compose
 from .recipes.cutout import DEVICE_CHOICES, QUALITY_CHOICES, cut_out_person
@@ -44,6 +45,7 @@ from .recipes.sfx import SFX_KINDS, SfxCue, add_sfx
 from .recipes.silence_trim import trim_silence
 from .recipes.smart_reframe import VALID_REFRAME_MODES, smart_reframe
 from .recipes.speed import change_speed
+from .recipes.stabilize import stabilize_video
 from .recipes.stems import AUDIO_FORMAT_CHOICES, TWO_STEMS_CHOICES, separate_stems
 from .recipes.subject_ground import ground_subject
 from .recipes.subtitles import generate_subtitles
@@ -368,6 +370,49 @@ def build_parser() -> argparse.ArgumentParser:
     zoom_cmd.add_argument("--duration", type=float, default=2.0, help="Zoom duration in seconds")
     zoom_cmd.add_argument(
         "--scale", type=float, default=1.15, help="Zoom scale factor (e.g. 1.15 for 115%)"
+    )
+
+    stabilize_cmd = subcommands.add_parser(
+        "stabilize",
+        help="2-pass video stabilization and camera motion smoothing (VidStab)",
+    )
+    _add_io_arguments(stabilize_cmd)
+    stabilize_cmd.add_argument(
+        "--smoothing",
+        type=int,
+        default=20,
+        help="Number of frames for motion smoothing trajectory (default: 20)",
+    )
+    stabilize_cmd.add_argument(
+        "--shakiness",
+        type=int,
+        default=8,
+        help="Motion detection shakiness factor 1-10 (default: 8)",
+    )
+
+    cam_motion_cmd = subcommands.add_parser(
+        "camera-motion",
+        help="Apply dynamic subject tracking, cinematic push-in/pull-out, pans, or handheld drift",
+    )
+    _add_io_arguments(cam_motion_cmd)
+    cam_motion_cmd.add_argument(
+        "--motion",
+        type=str,
+        default="track",
+        choices=sorted(VALID_CAMERA_MOTIONS),
+        help="Camera motion type (track, push_in, pull_out, pan_left, pan_right, handheld)",
+    )
+    cam_motion_cmd.add_argument(
+        "--zoom-factor",
+        type=float,
+        default=1.15,
+        help="Zoom / crop scale factor (default: 1.15)",
+    )
+    cam_motion_cmd.add_argument(
+        "--smoothing",
+        type=float,
+        default=1.5,
+        help="Temporal smoothing window in seconds for subject tracking (default: 1.5)",
     )
 
     broll_cmd = subcommands.add_parser(
@@ -1360,6 +1405,34 @@ def _run_narrate(args: argparse.Namespace, config: Config, runner: KinoRunner) -
     return 0
 
 
+def _run_stabilize(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    result = stabilize_video(
+        args.input,
+        args.output,
+        config,
+        smoothing=args.smoothing,
+        shakiness=args.shakiness,
+        force=args.force,
+    )
+    print(f"stabilized video written to {result.output}")
+    print(f"  smoothing: {result.smoothing}")
+    return 0
+
+
+def _run_camera_motion(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    result = apply_camera_motion(
+        args.input,
+        args.output,
+        config,
+        motion=args.motion,
+        zoom_factor=args.zoom_factor,
+        smoothing=args.smoothing,
+        force=args.force,
+    )
+    print(f"camera motion ({result.motion}) written to {result.output}")
+    return 0
+
+
 def _run_studio(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
     run_studio(
         config,
@@ -1371,6 +1444,8 @@ def _run_studio(args: argparse.Namespace, config: Config, runner: KinoRunner) ->
 
 
 HANDLERS = {
+    "stabilize": _run_stabilize,
+    "camera-motion": _run_camera_motion,
     "clean": _run_clean,
     "cutout": _run_cutout,
     "matte": _run_matte,
