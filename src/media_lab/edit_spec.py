@@ -86,6 +86,8 @@ class VideoEditSpec:
     narrator_text: str | None = None
     narrator_voice: str | None = None
     stabilize: bool = False
+    camera_motion: str | None = None
+    camera_smoothing: float = 1.5
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,6 +235,8 @@ def parse_edit_spec(source: str | Path | dict[str, Any]) -> EditSpec:
         narrator_text=video_dict.get("narrator_text"),
         narrator_voice=video_dict.get("narrator_voice"),
         stabilize=bool(video_dict.get("stabilize", False)),
+        camera_motion=video_dict.get("camera_motion"),
+        camera_smoothing=float(video_dict.get("camera_smoothing", 1.5)),
     )
 
     audio_dict = raw.get("audio", {})

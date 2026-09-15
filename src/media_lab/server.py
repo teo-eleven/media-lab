@@ -304,7 +304,15 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
             previous_spec=self.session.last_spec,
             history=self.session.chat_history,
         )
-        is_informational = chat_res.intent in ("greeting", "help", "inspect")
+        is_informational = chat_res.intent in (
+            "greeting",
+            "help",
+            "inspect",
+            "ideation",
+            "question",
+            "consultation",
+            "clarification",
+        )
 
         if not execute or is_informational:
             if chat_res.spec is not None and not is_informational:

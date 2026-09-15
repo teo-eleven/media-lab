@@ -581,18 +581,121 @@ class CognitiveBrain:
 
         zoom_interval = 5.0 if punch_zoom else None
 
+        # 2b. Question & Directorial Consultation Detection
+        is_question = (
+            any(
+                p_lower.startswith(q)
+                for q in (
+                    "poti",
+                    "poți",
+                    "ai putea",
+                    "se poate",
+                    "ar trebui",
+                    "ce parere ai",
+                    "ce părere ai",
+                    "cum facem",
+                    "ce recomanzi",
+                    "crezi ca",
+                    "crezi că",
+                    "de ce",
+                    "oare",
+                )
+            )
+            or "?" in prompt
+            or any(
+                k in p_lower
+                for k in (
+                    "poti face asta",
+                    "poți face asta",
+                    "se poate face",
+                    "ai putea face",
+                    "e posibil",
+                )
+            )
+        )
+
+        # 2c. Camera Motion & Dynamic Kinetic Tracking
+        camera_track_triggers = (
+            "urmareste miscarea",
+            "urmărește mișcarea",
+            "urmareste persoana",
+            "urmărește persoana",
+            "urmareste-o",
+            "urmărește-o",
+            "sa mearga cu miscarea",
+            "să meargă cu mișcarea",
+            "miscari consecvente cu camera",
+            "mișcări consecvente cu camera",
+            "miscari cu camera",
+            "mișcări cu camera",
+            "camera tracking",
+            "camera follow",
+            "pan track",
+            "kinetic tracking",
+            "urmarire dinamica",
+            "urmărire dinamică",
+        )
+        has_camera_track = any(k in p_lower for k in camera_track_triggers)
+        has_push_in = any(
+            k in p_lower for k in ("push in", "slow zoom in", "apropiere lina", "apropiere lină")
+        )
+        has_pull_out = any(
+            k in p_lower for k in ("pull out", "slow zoom out", "departare lina", "depărtare lină")
+        )
+        has_pan_left = any(k in p_lower for k in ("pan stanga", "pan stânga", "pan left"))
+        has_pan_right = any(k in p_lower for k in ("pan dreapta", "pan right"))
+        has_handheld = any(
+            k in p_lower
+            for k in (
+                "handheld",
+                "camera din mana",
+                "cameră din mână",
+                "miscare organica",
+                "mișcare organică",
+            )
+        )
+
+        camera_motion = base_vid.camera_motion
+        reframe_mode = base_vid.reframe_mode
+        if has_camera_track:
+            camera_motion = "track"
+            reframe_mode = "track"
+            if has_stabilize_intent or "zoom out" in p_lower or "consecvent" in p_lower:
+                stabilize = True
+        elif has_push_in:
+            camera_motion = "push_in"
+        elif has_pull_out:
+            camera_motion = "pull_out"
+        elif has_pan_left:
+            camera_motion = "pan_left"
+        elif has_pan_right:
+            camera_motion = "pan_right"
+        elif has_handheld:
+            camera_motion = "handheld"
+        elif any(
+            k in p_lower for k in ("scoate miscare camera", "fara tracking", "camera statica")
+        ):
+            camera_motion = None
+            reframe_mode = "smart"
+
         # 3. Format & Reframe
         aspect = base_vid.aspect
         smart_reframe = base_vid.smart_reframe
         if any(k in p_lower for k in ("9:16", "short", "reels", "tiktok", "vertical")):
             aspect = "9:16"
             smart_reframe = True
+            if has_camera_track:
+                reframe_mode = "track"
         elif any(k in p_lower for k in ("1:1", "patrat", "pătrat", "square")):
             aspect = "1:1"
             smart_reframe = True
+            if has_camera_track:
+                reframe_mode = "track"
         elif any(k in p_lower for k in ("4:5", "portrait")):
             aspect = "4:5"
             smart_reframe = True
+            if has_camera_track:
+                reframe_mode = "track"
         elif "16:9" in p_lower or "orizontal" in p_lower or "horizontal" in p_lower:
             aspect = "16:9"
             smart_reframe = False
@@ -752,7 +855,7 @@ class CognitiveBrain:
         new_vid = VideoEditSpec(
             aspect=aspect,
             smart_reframe=smart_reframe,
-            reframe_mode=base_vid.reframe_mode,
+            reframe_mode=reframe_mode,
             punch_zoom=punch_zoom,
             zoom_interval=zoom_interval,
             broll_cuts=base_vid.broll_cuts,
@@ -783,6 +886,8 @@ class CognitiveBrain:
             narrator_text=narrator_text,
             narrator_voice=narrator_voice,
             stabilize=stabilize,
+            camera_motion=camera_motion,
+            camera_smoothing=1.5,
         )
 
         new_aud = AudioEditSpec(
@@ -807,16 +912,28 @@ class CognitiveBrain:
 
         ops = self._generate_operations_summary(final_spec, is_silent)
         explanation = self._generate_explanation(
-            prompt, final_spec, ops, is_iterative, is_negated_zoom, has_stabilize_intent
+            prompt,
+            final_spec,
+            ops,
+            is_iterative,
+            is_negated_zoom,
+            has_stabilize_intent,
+            is_question=is_question,
+            has_camera_track=has_camera_track,
         )
 
         return ReasoningResult(
             reply=explanation,
-            intent="edit",
+            intent="consultation" if is_question else "edit",
             operations=tuple(ops),
             spec=final_spec,
             executable=True,
             provider_used="local_semantic",
+            suggested_prompts=(
+                "Fă un short vertical 9:16 cu subtitrări galbene TikTok și taie pauzele",
+                "Curăță vocea cu profil podcast, aplică de-esser și normalizează sunetul",
+                "Adaugă o bară animată de progres galbenă la bază și zoom dinamic",
+            ),
         )
 
     def _generate_operations_summary(self, spec: EditSpec, is_silent: bool) -> list[str]:
@@ -831,8 +948,31 @@ class CognitiveBrain:
         else:
             ops.append("Punch-in zoom dinamic activat pentru retenție (1.15x)")
 
+        if spec.video.camera_motion == "track":
+            ops.append(
+                "Urmărire cinetică a camerei (Dynamic Camera Follow - "
+                "camera glisează lin cu mișcarea persoanei)"
+            )
+        elif spec.video.camera_motion == "push_in":
+            ops.append("Apropiere cinematică lină de cameră (Slow Push-In Zoom)")
+        elif spec.video.camera_motion == "pull_out":
+            ops.append("Depărtare cinematică lină de cameră (Slow Pull-Out Zoom)")
+        elif spec.video.camera_motion == "pan_left":
+            ops.append("Glisare cinematică spre stânga (Pan Left)")
+        elif spec.video.camera_motion == "pan_right":
+            ops.append("Glisare cinematică spre dreapta (Pan Right)")
+        elif spec.video.camera_motion == "handheld":
+            ops.append("Mișcare organică de cameră din mână (Cinematic Handheld Drift)")
+
         if spec.video.aspect != "original":
-            ops.append(f"Reîncadrare format {spec.video.aspect} (urmărire subiect)")
+            reframe_label = (
+                f"Reîncadrare verticală {spec.video.aspect} cu "
+                "urmărire dinamică pe subiect (Kinetic Track)"
+                if spec.video.reframe_mode in ("track", "dynamic", "follow")
+                else f"Reîncadrare format {spec.video.aspect} (urmărire subiect)"
+            )
+            ops.append(reframe_label)
+
         if spec.video.look:
             ops.append(f"Colorizare cinematică (profil {spec.video.look})")
         if spec.video.subtitles.enabled:
@@ -872,11 +1012,37 @@ class CognitiveBrain:
         is_iterative: bool,
         is_negated_zoom: bool,
         has_stabilize: bool,
+        is_question: bool = False,
+        has_camera_track: bool = False,
     ) -> str:
         """Create a clear, contextual, human-like Romanian reply explaining decisions."""
         lines: list[str] = []
 
-        if is_iterative:
+        if has_camera_track:
+            if is_question:
+                lines.append(
+                    "🎬 **Da, absolut! Putem realiza mișcări consecvente și fluide cu camera, "
+                    "care să meargă în armonie cu mișcarea persoanei.**\n\n"
+                    "În loc de o decupare rigidă sau un cadru static care lasă persoana să iasă, "
+                    "am configurat **Dynamic Kinetic Camera Tracking**:\n"
+                    "- **1. Urmărire Cinetică Fluidă (Kinetic Pan Track):** Camera analizează "
+                    "traiectoria persoanei pe axa timpului și ghidează lin fereastra de filmare "
+                    "odată cu pașii și deplasarea ei.\n"
+                    "- **2. Amortizare Tip Gimbal (Inerție 1.5s):** Mișcarea are o curbă organică "
+                    "de accelerare și decelerare, astfel încât camera nu smucește la mișcări mici, "
+                    "ci glisează elegant ca un operator profesionist.\n"
+                    "- **3. Corectare Defect Filmare:** Dacă ai dat zoom-out din greșeală când "
+                    "persoana s-a apropiat, urmărirea combinată cu stabilizarea 2-pass "
+                    "compensează optic trepidațiile și salturile de perspectivă."
+                )
+            else:
+                lines.append(
+                    "🎬 **Am activat urmărirea consecventă a camerei "
+                    "(Dynamic Kinetic Camera Tracking):**\n"
+                    "Camera va glisa lin și organic urmărind deplasarea persoanei în cadru, "
+                    "cu inerție de amortizare."
+                )
+        elif is_iterative:
             lines.append("🧠 **Am înțeles contextul:** Păstrez setările de la randarea precedentă.")
             if is_negated_zoom:
                 lines.append(
@@ -893,6 +1059,8 @@ class CognitiveBrain:
                 "(zoom-out manual neuniform). Am dezactivat efectul de punch-in zoom și "
                 "am activat stabilizarea 2-pass VidStab pentru a netezi cadrul."
             )
+        elif is_question:
+            lines.append("💡 **Da, sigur! Iată cum abordăm această solicitare:**")
         else:
             lines.append("🎬 **Am configurat planul de producție optimizat pentru cererea ta:**")
 

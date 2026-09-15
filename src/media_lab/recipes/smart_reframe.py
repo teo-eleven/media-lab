@@ -27,7 +27,9 @@ DEFAULT_REFRAME_RESOLUTIONS: dict[str, tuple[int, int]] = {
     "16:9": (1920, 1080),
 }
 
-VALID_REFRAME_MODES: frozenset[str] = frozenset({"smart", "center", "split"})
+VALID_REFRAME_MODES: frozenset[str] = frozenset(
+    {"smart", "center", "split", "track", "dynamic", "follow"}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,14 +85,18 @@ def detect_frame_subject_center(rgb_frame: np.ndarray) -> float:
     return float(np.clip(center_idx / w, 0.0, 1.0))
 
 
-def analyze_video_subject_trajectory(
+def analyze_video_subject_timed_trajectory(
     source: Path,
     config: Config,
     *,
-    fps_sample: float = 1.0,
-    max_samples: int = 30,
-) -> list[float]:
-    """Sample video frames across timeline and detect horizontal subject centers."""
+    fps_sample: float = 2.0,
+    max_samples: int = 40,
+) -> list[tuple[float, float]]:
+    """Sample video frames across timeline and detect (timestamp_s, center_x) pairs.
+
+    Returns:
+        List of (time_s, center_x) where center_x is in [0.0, 1.0].
+    """
     cmd = [
         str(config.ffmpeg),
         "-hide_banner",
@@ -109,19 +115,19 @@ def analyze_video_subject_trajectory(
     try:
         proc = subprocess.run(cmd, capture_output=True, check=False, timeout=60)
     except subprocess.TimeoutExpired:
-        return [0.5]
+        return [(0.0, 0.5)]
 
     if proc.returncode != 0 or not proc.stdout:
-        return [0.5]
+        return [(0.0, 0.5)]
 
     frame_bytes = 160 * 90 * 3
     raw = proc.stdout
     total_frames = len(raw) // frame_bytes
     if total_frames == 0:
-        return [0.5]
+        return [(0.0, 0.5)]
 
     step = max(1, total_frames // max_samples)
-    centers: list[float] = []
+    points: list[tuple[float, float]] = []
 
     for idx in range(0, total_frames, step):
         offset = idx * frame_bytes
@@ -129,9 +135,111 @@ def analyze_video_subject_trajectory(
         if len(frame_data) < frame_bytes:
             break
         arr = np.frombuffer(frame_data, dtype=np.uint8).reshape((90, 160, 3))
-        centers.append(detect_frame_subject_center(arr))
+        center_x = detect_frame_subject_center(arr)
+        time_s = round(idx / fps_sample, 2)
+        points.append((time_s, center_x))
 
-    return centers if centers else [0.5]
+    return points if points else [(0.0, 0.5)]
+
+
+def analyze_video_subject_trajectory(
+    source: Path,
+    config: Config,
+    *,
+    fps_sample: float = 1.0,
+    max_samples: int = 30,
+) -> list[float]:
+    """Sample video frames across timeline and detect horizontal subject centers."""
+    timed = analyze_video_subject_timed_trajectory(
+        source, config, fps_sample=fps_sample, max_samples=max_samples
+    )
+    return [p[1] for p in timed]
+
+
+def smooth_timed_trajectory(
+    points: list[tuple[float, float]],
+    smoothing_window_s: float = 1.5,
+) -> list[tuple[float, float]]:
+    """Apply temporal Gaussian smoothing to eliminate micro-jitters."""
+    if len(points) <= 2:
+        return points
+
+    times = [p[0] for p in points]
+    values = [p[1] for p in points]
+    smoothed: list[float] = []
+
+    for t in times:
+        weights = [
+            float(np.exp(-0.5 * ((t - other_t) / max(0.2, smoothing_window_s)) ** 2))
+            for other_t in times
+        ]
+        total_w = sum(weights)
+        smoothed_val = sum(w * v for w, v in zip(weights, values, strict=True)) / total_w
+        smoothed.append(float(smoothed_val))
+
+    return list(zip(times, smoothed, strict=True))
+
+
+def build_dynamic_crop_expression(
+    sw: int,
+    cw: int,
+    points: list[tuple[float, float]],
+    deadband_threshold: float = 0.03,
+) -> str:
+    """Build an FFmpeg piecewise interpolation expression for dynamic crop x coordinate.
+
+    If horizontal subject movement across the clip is within the deadband threshold,
+    locks to the median position to prevent unnecessary drift on static shots.
+    Otherwise, generates an easing piecewise linear expression that tracks the
+    subject's movement with even pixel alignment for codec compatibility.
+    """
+    max_crop_x = sw - cw
+    if max_crop_x <= 0 or not points:
+        return "0"
+
+    xs = [p[1] for p in points]
+    # If the subject doesn't move significantly across the video, lock to median
+    if (max(xs) - min(xs)) < deadband_threshold:
+        median_x = float(np.median(xs))
+        fixed_x = int(round(median_x * sw - cw / 2))
+        fixed_x = max(0, min(max_crop_x, fixed_x))
+        fixed_x = fixed_x - (fixed_x % 2)
+        return str(fixed_x)
+
+    # Downsample points so FFmpeg expression stays compact and smooth
+    filtered_points: list[tuple[float, float]] = [points[0]]
+    for pt in points[1:]:
+        last_t, last_x = filtered_points[-1]
+        if (pt[0] - last_t >= 0.8) or abs(pt[1] - last_x) >= 0.04:
+            filtered_points.append(pt)
+    if filtered_points[-1] != points[-1]:
+        filtered_points.append(points[-1])
+
+    crop_keyframes: list[tuple[float, int]] = []
+    for t, norm_x in filtered_points:
+        cx = int(round(norm_x * sw - cw / 2))
+        cx = max(0, min(max_crop_x, cx))
+        cx = cx - (cx % 2)
+        crop_keyframes.append((t, cx))
+
+    if len(crop_keyframes) == 1:
+        return str(crop_keyframes[0][1])
+
+    # Build nested if expression:
+    # if(lt(t, t1), (cx0 + (cx1-cx0)*(t-t0)/(t1-t0)), if(lt(t, t2), ...))
+    expr = str(crop_keyframes[-1][1])
+    for i in range(len(crop_keyframes) - 2, -1, -1):
+        t0, cx0 = crop_keyframes[i]
+        t1, cx1 = crop_keyframes[i + 1]
+        dt = max(0.01, round(t1 - t0, 3))
+        if cx0 == cx1:
+            segment = f"{cx0}"
+        else:
+            diff = cx1 - cx0
+            segment = f"({cx0}+{diff}*(t-{t0:.2f})/{dt:.2f})"
+        expr = f"if(lt(t,{t1:.2f}),{segment},{expr})"
+
+    return f"clip(trunc(({expr})/2)*2,0,{max_crop_x})"
 
 
 def calculate_crop_box(
@@ -239,6 +347,14 @@ def smart_reframe(
             f"[fg_in]scale={tw}:{th}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];"
             f"[bg][fg]overlay=(W-w)/2:(H-h)/2[out_v]"
         )
+    elif mode in ("track", "dynamic", "follow"):
+        timed_points = analyze_video_subject_timed_trajectory(resolved_source, config)
+        smoothed_points = smooth_timed_trajectory(timed_points)
+        median_x = float(np.median([p[1] for p in smoothed_points]))
+        cx_med, cy, cw, ch = calculate_crop_box(sw, sh, aspect_ratio_num, median_x)
+        crop_box = (cx_med, cy, cw, ch)
+        dynamic_x_expr = build_dynamic_crop_expression(sw, cw, smoothed_points)
+        filtergraph = f"[0:v]crop={cw}:{ch}:{dynamic_x_expr}:{cy},scale={tw}:{th}[out_v]"
     else:
         if mode == "smart":
             centers = analyze_video_subject_trajectory(resolved_source, config)

@@ -112,6 +112,16 @@ def interpret_prompt(
             "păstrează restul",
             "modifica doar",
             "modifică doar",
+            "am dat zoom out",
+            "zoom out",
+            "scoate zoom",
+            "scoate acel zoom",
+            "urmareste",
+            "urmărește",
+            "camera",
+            "tracking",
+            "sa mearga cu miscarea",
+            "să meargă cu mișcarea",
         )
     ):
         brain = CognitiveBrain()
@@ -1043,28 +1053,46 @@ def chat_agent(
     # Route through CognitiveBrain when previous_spec is available
     # or camera defect / continuity is present
     has_continuity = previous_spec is not None
-    has_camera_defect = any(
-        k in p_lower
-        for k in (
-            "am dat zoom out",
-            "zoom out",
-            "se vede prost",
-            "scoate zoom",
-            "scoate acel zoom",
-            "fara zoom",
-            "fără zoom",
-            "nu mai da zoom",
-            "stabilizeaza",
-            "stabilizează",
-            "tremur",
-            "ca inainte",
-            "ca înainte",
-            "la fel",
-            "exact la fel",
+    has_camera_motion_or_dialogue = (
+        any(
+            k in p_lower
+            for k in (
+                "am dat zoom out",
+                "zoom out",
+                "se vede prost",
+                "scoate zoom",
+                "scoate acel zoom",
+                "fara zoom",
+                "fără zoom",
+                "nu mai da zoom",
+                "stabilizeaza",
+                "stabilizează",
+                "tremur",
+                "ca inainte",
+                "ca înainte",
+                "la fel",
+                "exact la fel",
+                "urmareste",
+                "urmărește",
+                "camera",
+                "tracking",
+                "miscare",
+                "mișcare",
+                "pan",
+                "poti face",
+                "poți face",
+                "ar trebui",
+                "ce parere",
+                "ce părere",
+                "crezi ca",
+                "crezi că",
+                "cum facem",
+            )
         )
+        or "?" in p
     )
 
-    if has_continuity or has_camera_defect:
+    if has_continuity or has_camera_motion_or_dialogue:
         brain = CognitiveBrain()
         b_res = brain.reason(
             p,

@@ -25,6 +25,7 @@ from .recipes.audio_enhance import VOICE_PROFILES, enhance_audio
 from .recipes.backdrop import place_on_backdrop
 from .recipes.beat_sync import detect_beats
 from .recipes.broll import BrollCut, insert_broll
+from .recipes.camera_motion import VALID_CAMERA_MOTIONS, apply_camera_motion
 from .recipes.colour_match import colour_match
 from .recipes.compose_spec import compose
 from .recipes.cutout import DEVICE_CHOICES, QUALITY_CHOICES, cut_out_person
@@ -387,6 +388,31 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=8,
         help="Motion detection shakiness factor 1-10 (default: 8)",
+    )
+
+    cam_motion_cmd = subcommands.add_parser(
+        "camera-motion",
+        help="Apply dynamic subject tracking, cinematic push-in/pull-out, pans, or handheld drift",
+    )
+    _add_io_arguments(cam_motion_cmd)
+    cam_motion_cmd.add_argument(
+        "--motion",
+        type=str,
+        default="track",
+        choices=sorted(VALID_CAMERA_MOTIONS),
+        help="Camera motion type (track, push_in, pull_out, pan_left, pan_right, handheld)",
+    )
+    cam_motion_cmd.add_argument(
+        "--zoom-factor",
+        type=float,
+        default=1.15,
+        help="Zoom / crop scale factor (default: 1.15)",
+    )
+    cam_motion_cmd.add_argument(
+        "--smoothing",
+        type=float,
+        default=1.5,
+        help="Temporal smoothing window in seconds for subject tracking (default: 1.5)",
     )
 
     broll_cmd = subcommands.add_parser(
@@ -1393,6 +1419,20 @@ def _run_stabilize(args: argparse.Namespace, config: Config, runner: KinoRunner)
     return 0
 
 
+def _run_camera_motion(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    result = apply_camera_motion(
+        args.input,
+        args.output,
+        config,
+        motion=args.motion,
+        zoom_factor=args.zoom_factor,
+        smoothing=args.smoothing,
+        force=args.force,
+    )
+    print(f"camera motion ({result.motion}) written to {result.output}")
+    return 0
+
+
 def _run_studio(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
     run_studio(
         config,
@@ -1405,6 +1445,7 @@ def _run_studio(args: argparse.Namespace, config: Config, runner: KinoRunner) ->
 
 HANDLERS = {
     "stabilize": _run_stabilize,
+    "camera-motion": _run_camera_motion,
     "clean": _run_clean,
     "cutout": _run_cutout,
     "matte": _run_matte,

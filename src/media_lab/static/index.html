@@ -323,6 +323,7 @@
       </div>
 
       <div class="suggestions">
+        <span class="chip" onclick="applySuggestion('Urmărește mișcarea persoanei cu camera lin și stabilizează clipul')">🎥 Cameră Dinamică (Follow)</span>
         <span class="chip" onclick="applySuggestion('Fă un short vertical 9:16 cu subtitrări galbene TikTok, curăță vocea și taie pauzele')">📱 Short 9:16 + Subtitrări</span>
         <span class="chip" onclick="applySuggestion('Adaugă o bară animată de progres galbenă la bază și zoom dinamic la 4 secunde')">⚡ Progres + Zoom</span>
         <span class="chip" onclick="applySuggestion('Curăță vocea cu profil podcast, aplică de-esser și normalizează sunetul')">🎙️ Mastering Voce</span>
@@ -330,8 +331,11 @@
       </div>
 
       <div class="chat-input-bar">
-        <input type="text" id="promptInput" class="chat-input" placeholder="Scrie o instrucțiune sau întreabă agentul (ex: fă un short 9:16 cu subtitrări)..." onkeydown="if(event.key==='Enter') sendPrompt()">
-        <button class="btn" onclick="sendPrompt()">Trimite 💬</button>
+        <input type="text" id="promptInput" class="chat-input" placeholder="Scrie o instrucțiune sau întreabă agentul (ex: poți urmări mișcarea persoanei cu camera?)..." onkeydown="if(event.key==='Enter') sendPrompt()">
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text-muted); cursor: pointer; white-space: nowrap; user-select: none;" title="Dacă este bifat, execută direct randarea fără confirmare regizorală prealabilă">
+          <input type="checkbox" id="autoRenderToggle" style="cursor: pointer;"> Auto-randare
+        </label>
+        <button class="btn btn-primary" onclick="sendPrompt()">Trimite 💬</button>
       </div>
     </main>
 
@@ -467,17 +471,30 @@
       if (!customText) input.value = '';
       messagesArea.scrollTop = messagesArea.scrollHeight;
 
+      // Check if user explicitly demanded direct execution or auto-render is on
+      const lower = text.toLowerCase();
+      const directExecuteKeywords = [
+        "randeaza direct", "randează direct", "aplica direct", "aplică direct",
+        "executa acum", "execută acum", "fa direct", "fă direct",
+        "da-i drumul", "dă-i drumul", "randeaza acum", "randează acum"
+      ];
+      const autoRenderToggle = document.getElementById('autoRenderToggle');
+      const shouldAutoExecute = (autoRenderToggle && autoRenderToggle.checked) ||
+        directExecuteKeywords.some(k => lower.includes(k));
+
       // Agent placeholder
       const agentMsg = document.createElement('div');
       agentMsg.className = 'message agent';
-      agentMsg.innerHTML = `<em>⚙️ Lucrez la cererea ta: <strong>"${escapeHtml(text)}"</strong>... Procesez prin motorul Media Lab Studio...</em>`;
+      agentMsg.innerHTML = shouldAutoExecute
+        ? `<em>⚙️ Randez direct cererea ta: <strong>"${escapeHtml(text)}"</strong>... Te rog așteaptă câteva momente...</em>`
+        : `<em>🧠 Analizez și formulez răspunsul regizoral pentru: <strong>"${escapeHtml(text)}"</strong>...</em>`;
       messagesArea.appendChild(agentMsg);
       messagesArea.scrollTop = messagesArea.scrollHeight;
 
       const payload = {
         prompt: text,
         input: currentSelectedFile ? `${currentSelectedFile.folder}/${currentSelectedFile.name}` : null,
-        execute: true
+        execute: shouldAutoExecute
       };
 
       try {
@@ -489,11 +506,11 @@
         const data = await res.json();
 
         if (data.error) {
-          agentMsg.innerHTML = `<span style="color: var(--danger);">❌ Eroare la procesare: ${escapeHtml(data.error)}</span>`;
+          agentMsg.innerHTML = `<span style="color: var(--danger);">❌ Eroare: ${escapeHtml(data.error)}</span>`;
           return;
         }
 
-        // Render completed execution
+        // Render completed direct execution
         if (data.steps && data.steps.length > 0) {
           let stepsHtml = data.steps.map(step =>
             `<div class="plan-step"><span class="step-badge">✓</span><span>${escapeHtml(step)}</span></div>`
@@ -511,14 +528,37 @@
           `;
 
           await loadFiles();
-
-          // Immediately select and display newly rendered output
           if (data.output) {
             selectFile('out', { name: data.output, type: 'video', size_human: 'Randat' }, null);
           }
         } else {
-          // Informational response (greeting, help, inspection)
+          // Conversational reply and plan formulation
           let replyHtml = renderMarkdown(data.reply || '');
+
+          if (data.operations && data.operations.length > 0) {
+            let opsHtml = data.operations.map((op, idx) =>
+              `<div class="plan-step"><span class="step-badge">${idx + 1}</span><span>${escapeHtml(op)}</span></div>`
+            ).join('');
+
+            const safePromptEnc = encodeURIComponent(data.prompt || text);
+            replyHtml += `
+              <div class="plan-card" style="margin-top: 12px; border: 1px solid var(--accent); background: rgba(99, 102, 241, 0.08);">
+                <div style="font-weight: 700; margin-bottom: 8px; color: #818cf8; display: flex; align-items: center; gap: 6px;">
+                  <span>📋</span><span>Plan de Producție Pregătit:</span>
+                </div>
+                ${opsHtml}
+                <div style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap;">
+                  <button class="btn btn-primary" onclick="executePlan('${safePromptEnc}')" style="font-weight: 700; padding: 8px 18px; font-size: 0.9rem; cursor: pointer;">
+                    ▶️ Aplică și Randează
+                  </button>
+                  <button class="btn btn-secondary" onclick="document.getElementById('promptInput').focus();" style="font-size: 0.85rem; padding: 8px 14px; cursor: pointer;">
+                    💬 Ajustează comanda
+                  </button>
+                </div>
+              </div>
+            `;
+          }
+
           if (data.suggested_prompts && data.suggested_prompts.length > 0) {
             let chipsHtml = data.suggested_prompts.map(p => {
               const safeP = escapeHtml(p).replace(/'/g, "\\'");
@@ -540,7 +580,7 @@
 
       const statusMsg = document.createElement('div');
       statusMsg.className = 'message agent';
-      statusMsg.innerHTML = `<em>⚙️ Se procesează randarea prin motorul Media Lab (FFmpeg & AI)... Te rog așteaptă câteva momente...</em>`;
+      statusMsg.innerHTML = `<em>⚙️ Randez clipul prin motorul Media Lab (FFmpeg & AI)... Te rog așteaptă câteva momente...</em>`;
       messagesArea.appendChild(statusMsg);
       messagesArea.scrollTop = messagesArea.scrollHeight;
 
@@ -559,7 +599,7 @@
         const data = await res.json();
 
         if (data.error) {
-          statusMsg.innerHTML = `<span style="color: var(--danger);">Eroare la randare: ${escapeHtml(data.error)}</span>`;
+          statusMsg.innerHTML = `<span style="color: var(--danger);">❌ Eroare la randare: ${escapeHtml(data.error)}</span>`;
           return;
         }
 
@@ -568,9 +608,9 @@
         ).join('');
 
         statusMsg.innerHTML = `
-          <div>${renderMarkdown(data.reply || 'Randare completată cu succes!')}</div>
+          <div>${renderMarkdown(data.reply || '🎉 Randare completată cu succes!')}</div>
           <div class="plan-card" style="margin-top: 10px;">
-            <h4>Pași finalizați:</h4>
+            <div style="font-weight: 700; margin-bottom: 8px; color: #fff;">✅ Pași finalizați:</div>
             ${stepsHtml}
           </div>
           <div style="margin-top: 10px; font-weight: 600;">
