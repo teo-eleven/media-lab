@@ -289,9 +289,8 @@
       </div>
 
       <div class="chat-input-bar">
-        <input type="text" id="promptInput" class="chat-input" placeholder="Scrie instrucțiunile de editare (ex: fă un short 9:16 cu subtitrări tiktok)..." onkeydown="if(event.key==='Enter') sendPrompt(false)">
-        <button class="btn secondary" onclick="sendPrompt(true)" title="Previzualizează planul fără să randezi">Plan Only</button>
-        <button class="btn" onclick="sendPrompt(false)">Execută 🚀</button>
+        <input type="text" id="promptInput" class="chat-input" placeholder="Scrie o instrucțiune sau întreabă agentul (ex: fă un short 9:16 cu subtitrări)..." onkeydown="if(event.key==='Enter') sendPrompt()">
+        <button class="btn" onclick="sendPrompt()">Trimite 💬</button>
       </div>
     </main>
 
@@ -330,6 +329,8 @@
         const container = document.getElementById('fileList');
         container.innerHTML = '';
 
+        let defaultCandidate = null;
+
         ['in', 'out', 'work'].forEach(folder => {
           const files = data[folder] || [];
           if (files.length === 0) return;
@@ -339,14 +340,24 @@
           container.appendChild(groupHeader);
 
           files.forEach(f => {
+            if (!defaultCandidate && (folder === 'in' || folder === 'out') && f.type === 'video') {
+              defaultCandidate = { folder, ...f };
+            }
             const item = document.createElement('div');
             item.className = 'file-item';
+            if (currentSelectedFile && currentSelectedFile.folder === folder && currentSelectedFile.name === f.name) {
+              item.classList.add('active');
+            }
             const icon = f.type === 'video' ? '🎬' : (f.type === 'audio' ? '🎵' : '🖼️');
             item.innerHTML = `<span class="file-icon">${icon}</span><span class="file-name">${escapeHtml(f.name)}</span><span class="file-size">${escapeHtml(f.size_human)}</span>`;
             item.onclick = (e) => selectFile(folder, f, e);
             container.appendChild(item);
           });
         });
+
+        if (!currentSelectedFile && defaultCandidate) {
+          selectFile(defaultCandidate.folder, defaultCandidate, null);
+        }
       } catch (err) {
         console.error("Error loading files:", err);
       }
@@ -379,14 +390,30 @@
       }
     }
 
-    function applySuggestion(text) {
-      document.getElementById('promptInput').value = text;
-      document.getElementById('promptInput').focus();
+    function renderMarkdown(md) {
+      if (!md) return '';
+      let html = escapeHtml(md);
+      html = html.replace(/^### (.*$)/gim, '<h4 style="margin: 8px 0 4px 0; color: #fff; font-size: 1rem;">$1</h4>');
+      html = html.replace(/^## (.*$)/gim, '<h3 style="margin: 10px 0 6px 0; color: #fff; font-size: 1.1rem;">$1</h3>');
+      html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+      html = html.replace(/`([^`]+)`/g, '<code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 0.85em; color: #818cf8;">$1</code>');
+      html = html.replace(/^&gt; (.*$)/gim, '<blockquote style="border-left: 3px solid var(--accent); padding-left: 8px; margin: 6px 0; color: var(--text-muted); font-style: italic;">$1</blockquote>');
+      html = html.replace(/^- (.*$)/gim, '<div style="margin-left: 12px; margin-bottom: 3px;">• $1</div>');
+      html = html.replace(/\n\n/g, '<div style="height: 8px;"></div>');
+      html = html.replace(/\n/g, '<br>');
+      return html;
     }
 
-    async function sendPrompt(planOnly) {
+    function applySuggestion(text) {
       const input = document.getElementById('promptInput');
-      const text = input.value.trim();
+      input.value = text;
+      input.focus();
+    }
+
+    async function sendPrompt(customText) {
+      const input = document.getElementById('promptInput');
+      const text = (customText || input.value).trim();
       if (!text) return;
 
       const messagesArea = document.getElementById('messagesArea');
@@ -396,20 +423,20 @@
       userMsg.className = 'message user';
       userMsg.textContent = text;
       messagesArea.appendChild(userMsg);
-      input.value = '';
+      if (!customText) input.value = '';
       messagesArea.scrollTop = messagesArea.scrollHeight;
 
       // Agent placeholder
       const agentMsg = document.createElement('div');
       agentMsg.className = 'message agent';
-      agentMsg.innerHTML = '<em>Agentul analizează promptul și pregătește fluxul de lucru...</em>';
+      agentMsg.innerHTML = `<em>⚙️ Lucrez la cererea ta: <strong>"${escapeHtml(text)}"</strong>... Procesez prin motorul Media Lab Studio...</em>`;
       messagesArea.appendChild(agentMsg);
       messagesArea.scrollTop = messagesArea.scrollHeight;
 
       const payload = {
         prompt: text,
         input: currentSelectedFile ? `${currentSelectedFile.folder}/${currentSelectedFile.name}` : null,
-        plan_only: planOnly
+        execute: true
       };
 
       try {
@@ -421,26 +448,103 @@
         const data = await res.json();
 
         if (data.error) {
-          agentMsg.innerHTML = `<span style="color: var(--danger);">Eroare: ${escapeHtml(data.error)}</span>`;
+          agentMsg.innerHTML = `<span style="color: var(--danger);">❌ Eroare la procesare: ${escapeHtml(data.error)}</span>`;
           return;
         }
 
-        if (planOnly) {
-          let stepsHtml = data.operations.map((op, i) =>
-            `<div class="plan-step"><span class="step-badge">${i+1}</span><span>${escapeHtml(op)}</span></div>`
-          ).join('');
-          agentMsg.innerHTML = `<div><strong>Plan de acțiune generat:</strong></div><div class="plan-card">${stepsHtml}</div>`;
-        } else {
-          let stepsHtml = (data.steps || []).map((step, i) =>
+        // Render completed execution
+        if (data.steps && data.steps.length > 0) {
+          let stepsHtml = data.steps.map(step =>
             `<div class="plan-step"><span class="step-badge">✓</span><span>${escapeHtml(step)}</span></div>`
           ).join('');
-          agentMsg.innerHTML = `<div>🎉 <strong>Randare completată cu succes!</strong></div>
-          <div class="plan-card"><h4>Pași executați:</h4>${stepsHtml}</div>
-          <div style="margin-top: 8px;">Fișier salvat: <code>${escapeHtml(data.output)}</code></div>`;
-          loadFiles();
+
+          agentMsg.innerHTML = `
+            <div>${renderMarkdown(data.reply || '🎉 Randare completată cu succes!')}</div>
+            <div class="plan-card" style="margin-top: 10px;">
+              <div style="font-weight: 700; margin-bottom: 8px; color: #fff;">✅ Etape finalizate:</div>
+              ${stepsHtml}
+            </div>
+            <div style="margin-top: 10px; font-weight: 600;">
+              Fișier generat: <code style="color: var(--success);">${escapeHtml(data.output)}</code>
+            </div>
+          `;
+
+          await loadFiles();
+
+          // Immediately select and display newly rendered output
+          if (data.output) {
+            selectFile('out', { name: data.output, type: 'video', size_human: 'Randat' }, null);
+          }
+        } else {
+          // Informational response (greeting, help, inspection)
+          let replyHtml = renderMarkdown(data.reply || '');
+          if (data.suggested_prompts && data.suggested_prompts.length > 0) {
+            let chipsHtml = data.suggested_prompts.map(p => {
+              const safeP = escapeHtml(p).replace(/'/g, "\\'");
+              return `<span class="chip" style="font-size: 0.76rem;" onclick="applySuggestion('${safeP}')">${escapeHtml(p)}</span>`;
+            }).join('');
+            replyHtml += `<div style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px;">${chipsHtml}</div>`;
+          }
+          agentMsg.innerHTML = replyHtml;
         }
       } catch (err) {
         agentMsg.innerHTML = `<span style="color: var(--danger);">Eroare rețea: ${escapeHtml(err.message)}</span>`;
+      }
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+    }
+
+    async function executePlan(encodedPrompt) {
+      const text = decodeURIComponent(encodedPrompt);
+      const messagesArea = document.getElementById('messagesArea');
+
+      const statusMsg = document.createElement('div');
+      statusMsg.className = 'message agent';
+      statusMsg.innerHTML = `<em>⚙️ Se procesează randarea prin motorul Media Lab (FFmpeg & AI)... Te rog așteaptă câteva momente...</em>`;
+      messagesArea.appendChild(statusMsg);
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+
+      const payload = {
+        prompt: text,
+        input: currentSelectedFile ? `${currentSelectedFile.folder}/${currentSelectedFile.name}` : null,
+        execute: true
+      };
+
+      try {
+        const res = await fetch('/api/prompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          statusMsg.innerHTML = `<span style="color: var(--danger);">Eroare la randare: ${escapeHtml(data.error)}</span>`;
+          return;
+        }
+
+        let stepsHtml = (data.steps || []).map((step, i) =>
+          `<div class="plan-step"><span class="step-badge">✓</span><span>${escapeHtml(step)}</span></div>`
+        ).join('');
+
+        statusMsg.innerHTML = `
+          <div>${renderMarkdown(data.reply || 'Randare completată cu succes!')}</div>
+          <div class="plan-card" style="margin-top: 10px;">
+            <h4>Pași finalizați:</h4>
+            ${stepsHtml}
+          </div>
+          <div style="margin-top: 10px; font-weight: 600;">
+            Fișier generat: <code style="color: var(--success);">${escapeHtml(data.output)}</code>
+          </div>
+        `;
+
+        await loadFiles();
+
+        // Select the newly rendered output in the player
+        if (data.output) {
+          selectFile('out', { name: data.output, type: 'video', size_human: 'Nou' }, null);
+        }
+      } catch (err) {
+        statusMsg.innerHTML = `<span style="color: var(--danger);">Eroare rețea la randare: ${escapeHtml(err.message)}</span>`;
       }
       messagesArea.scrollTop = messagesArea.scrollHeight;
     }

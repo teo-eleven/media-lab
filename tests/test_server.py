@@ -76,12 +76,26 @@ def test_studio_server_endpoints(config: Config) -> None:
             chunk = resp.read()
             assert len(chunk) == 101
 
-        # 4. Test POST /api/prompt with plan_only
+        # 4. Test POST /api/prompt conversational (greeting)
+        post_chat = json.dumps({"prompt": "salut"}).encode("utf-8")
+        req_chat = urllib.request.Request(
+            f"{base_url}/api/prompt",
+            data=post_chat,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req_chat) as resp:
+            assert resp.status == 200
+            res_chat = json.loads(resp.read().decode("utf-8"))
+            assert res_chat["intent"] == "greeting"
+            assert res_chat["executable"] is False
+            assert len(res_chat["suggested_prompts"]) > 0
+
+        # 4b. Test POST /api/prompt plan mode
         post_data = json.dumps(
             {
                 "prompt": "Fa un short vertical cu subtitrari galbene",
                 "input": f"in/{src_file.name}",
-                "plan_only": True,
+                "execute": False,
             }
         ).encode("utf-8")
         req_post = urllib.request.Request(
@@ -94,6 +108,28 @@ def test_studio_server_endpoints(config: Config) -> None:
             res_data = json.loads(resp.read().decode("utf-8"))
             assert "operations" in res_data
             assert len(res_data["operations"]) > 0
+            assert res_data["intent"] == "plan"
+            assert res_data["executable"] is True
+
+        # 4c. Test POST /api/prompt execute mode
+        post_exec = json.dumps(
+            {
+                "prompt": "Conversie rapida",
+                "input": f"in/{src_file.name}",
+                "execute": True,
+            }
+        ).encode("utf-8")
+        req_exec = urllib.request.Request(
+            f"{base_url}/api/prompt",
+            data=post_exec,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req_exec) as resp:
+            assert resp.status == 200
+            res_exec = json.loads(resp.read().decode("utf-8"))
+            assert res_exec["status"] == "ok"
+            assert "output" in res_exec
+            assert (config.out_dir / res_exec["output"]).is_file()
 
         # 5. Security Test: Path traversal defense
         try:

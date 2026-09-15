@@ -21,7 +21,7 @@ from typing import Any
 from .config import Config
 from .kino import KinoRunner
 from .ml_runner import MlRunner
-from .prompt_agent import execute_prompt, plan_prompt
+from .prompt_agent import chat_agent, execute_prompt
 
 STATIC_DIR: Path = Path(__file__).parent / "static"
 
@@ -179,15 +179,18 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
                 self.send_header("Accept-Ranges", "bytes")
                 self.end_headers()
 
-                with file_path.open("rb") as f:
-                    f.seek(start)
-                    remaining = length
-                    while remaining > 0:
-                        chunk = f.read(min(65536, remaining))
-                        if not chunk:
-                            break
-                        self.wfile.write(chunk)
-                        remaining -= len(chunk)
+                try:
+                    with file_path.open("rb") as f:
+                        f.seek(start)
+                        remaining = length
+                        while remaining > 0:
+                            chunk = f.read(min(65536, remaining))
+                            if not chunk:
+                                break
+                            self.wfile.write(chunk)
+                            remaining -= len(chunk)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
                 return
 
         self.send_response(HTTPStatus.OK)
@@ -196,12 +199,15 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
         self.send_header("Accept-Ranges", "bytes")
         self.end_headers()
 
-        with file_path.open("rb") as f:
-            while chunk := f.read(65536):
-                self.wfile.write(chunk)
+        try:
+            with file_path.open("rb") as f:
+                while chunk := f.read(65536):
+                    self.wfile.write(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def _handle_api_prompt(self) -> None:
-        """Handle prompt analysis and execution from UI."""
+        """Handle prompt analysis, conversational assistance, and execution from UI."""
         content_length = int(self.headers.get("Content-Length", 0))
         post_data = self.rfile.read(content_length)
         try:
@@ -212,68 +218,121 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
 
         prompt_str = payload.get("prompt", "").strip()
         input_str = payload.get("input")
-        plan_only = bool(payload.get("plan_only", False))
+        execute = bool(payload.get("execute", False))
 
         if not prompt_str:
             self._send_json_response({"error": "Prompt cannot be empty"}, status=400)
             return
 
-        # Fallback to first media file in in/ if none selected
-        if not input_str:
-            for entry in self.config.in_dir.iterdir():
-                if entry.is_file() and not entry.name.startswith("."):
-                    input_str = str(entry)
+        # Resolve input_str if provided, or fallback to first media file in in/, then out/
+        src_path: Path | None = None
+        if input_str:
+            p = Path(input_str)
+            src_path = (
+                (self.config.in_dir.parent / p).resolve() if not p.is_absolute() else p.resolve()
+            )
+        else:
+            for entry in sorted(self.config.in_dir.iterdir()):
+                if (
+                    entry.is_file()
+                    and not entry.name.startswith(".")
+                    and entry.suffix.lower()
+                    in {".mp4", ".mov", ".m4a", ".wav", ".jpg", ".png", ".jpeg"}
+                ):
+                    src_path = entry.resolve()
                     break
+            if src_path is None and self.config.out_dir.exists():
+                for entry in sorted(
+                    self.config.out_dir.iterdir(),
+                    key=lambda x: x.stat().st_mtime,
+                    reverse=True,
+                ):
+                    if (
+                        entry.is_file()
+                        and not entry.name.startswith(".")
+                        and entry.suffix.lower() in {".mp4", ".mov", ".jpg", ".png"}
+                    ):
+                        src_path = entry.resolve()
+                        break
 
-        if not input_str:
+        if src_path is not None:
+            valid_roots = (
+                self.config.in_dir.resolve(),
+                self.config.out_dir.resolve(),
+                self.config.work_dir.resolve(),
+            )
+            if not any(src_path.is_relative_to(root) for root in valid_roots):
+                self._send_json_response(
+                    {"error": "Input path must reside within in/, out/, or work/"}, status=403
+                )
+                return
+
+        chat_res = chat_agent(prompt_str, src_path, self.config)
+        is_informational = chat_res.intent in ("greeting", "help", "inspect")
+
+        if not execute or is_informational:
+            self._send_json_response(
+                {
+                    "status": "ok",
+                    "reply": chat_res.reply,
+                    "intent": chat_res.intent,
+                    "operations": list(chat_res.plan_operations),
+                    "suggested_prompts": list(chat_res.suggested_prompts),
+                    "executable": chat_res.executable,
+                    "prompt": prompt_str,
+                    "input": str(src_path.name) if src_path else None,
+                }
+            )
+            return
+
+        if not src_path:
             self._send_json_response(
                 {"error": "No media file selected and 'in/' directory is empty"}, status=400
             )
             return
 
-        src_path = Path(input_str)
-        if not src_path.is_absolute():
-            src_path = (self.config.in_dir.parent / src_path).resolve()
-        else:
-            src_path = src_path.resolve()
+        stem = src_path.stem
+        if stem.startswith("studio_render_"):
+            stem = stem[len("studio_render_") :]
+        stem = re.sub(r"_v\d+$", "", stem)
 
-        valid_roots = (
-            self.config.in_dir.resolve(),
-            self.config.out_dir.resolve(),
-            self.config.work_dir.resolve(),
-        )
-        if not any(src_path.is_relative_to(root) for root in valid_roots):
-            self._send_json_response(
-                {"error": "Input path must reside within in/, out/, or work/"}, status=403
-            )
-            return
-
-        out_name = f"studio_render_{Path(input_str).stem}.mp4"
-        out_path = self.config.out_dir / out_name
+        candidate = self.config.out_dir / f"studio_render_{stem}.mp4"
+        counter = 1
+        while candidate.exists() and candidate.resolve() == src_path.resolve():
+            counter += 1
+            candidate = self.config.out_dir / f"studio_render_{stem}_v{counter}.mp4"
+        out_path = candidate
 
         try:
-            if plan_only:
-                plan = plan_prompt(prompt_str, src_path, out_path)
-                self._send_json_response(
-                    {"operations": list(plan.operations), "prompt": prompt_str}
+            result = execute_prompt(
+                prompt_str,
+                src_path,
+                out_path,
+                self.config,
+                self.runner,
+                self.ml_runner,
+                force=True,
+            )
+            skipped_audio = [s for s in result.steps_executed if "skipped" in s]
+            note = ""
+            if skipped_audio:
+                note = (
+                    "\n\n> ℹ️ **Notă:** Fișierul sursă nu are pistă audio. "
+                    "Etapele vocale au fost omise, iar efectele video au fost aplicate."
                 )
-            else:
-                result = execute_prompt(
-                    prompt_str,
-                    src_path,
-                    out_path,
-                    self.config,
-                    self.runner,
-                    self.ml_runner,
-                    force=True,
-                )
-                self._send_json_response(
-                    {
-                        "status": "ok",
-                        "output": str(result.output.name),
-                        "steps": list(result.steps_executed),
-                    }
-                )
+            self._send_json_response(
+                {
+                    "status": "ok",
+                    "reply": (
+                        f"🎉 **Randare completată cu succes!**\n\n"
+                        f"Am aplicat modificările cerute direct pe `{src_path.name}`.\n"
+                        f"Noul fișier salvat: `{result.output.name}` "
+                        f"({len(result.steps_executed)} etape executate).{note}"
+                    ),
+                    "output": str(result.output.name),
+                    "steps": list(result.steps_executed),
+                }
+            )
         except Exception as exc:
             self._send_json_response({"error": str(exc)}, status=500)
 

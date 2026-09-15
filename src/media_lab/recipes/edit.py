@@ -125,6 +125,65 @@ def run_edit_spec(
         current_img = photo_res.output_path
         photo_steps.append("photo_edit")
 
+        # Geometric & spatial transforms for photo
+        photo_geo_filters: list[str] = []
+        if spec.photo.vflip:
+            photo_geo_filters.append("vflip")
+            photo_steps.append("vflip")
+        if spec.photo.hflip:
+            photo_geo_filters.append("hflip")
+            photo_steps.append("hflip")
+        if spec.photo.rotate == 90:
+            photo_geo_filters.append("transpose=1")
+            photo_steps.append("rotate_90")
+        elif spec.photo.rotate == 180:
+            photo_geo_filters.append("vflip,hflip")
+            photo_steps.append("rotate_180")
+        elif spec.photo.rotate == 270:
+            photo_geo_filters.append("transpose=2")
+            photo_steps.append("rotate_270")
+        if spec.photo.invert_colors:
+            photo_geo_filters.append("negate")
+            photo_steps.append("invert_colors")
+        if spec.photo.grayscale:
+            photo_geo_filters.append("hue=s=0")
+            photo_steps.append("grayscale")
+        if (
+            spec.photo.brightness != 0.0
+            or spec.photo.contrast != 1.0
+            or spec.photo.saturation != 1.0
+        ):
+            eq_parts = []
+            if spec.photo.brightness != 0.0:
+                eq_parts.append(f"brightness={spec.photo.brightness:.2f}")
+            if spec.photo.contrast != 1.0:
+                eq_parts.append(f"contrast={spec.photo.contrast:.2f}")
+            if spec.photo.saturation != 1.0:
+                eq_parts.append(f"saturation={spec.photo.saturation:.2f}")
+            photo_geo_filters.append(f"eq={':'.join(eq_parts)}")
+            photo_steps.append("color_adjust")
+        if spec.photo.blur > 0.0:
+            r = max(1, int(spec.photo.blur))
+            photo_geo_filters.append(f"boxblur={r}:1")
+            photo_steps.append(f"blur_{r}")
+        if spec.photo.sharpen:
+            photo_geo_filters.append("unsharp=5:5:1.2:5:5:0.0")
+            photo_steps.append("sharpen")
+
+        if photo_geo_filters:
+            geo_photo_path = work / "step3b_photo_geometry.png"
+            run_ffmpeg(
+                [
+                    "-i",
+                    str(current_img),
+                    "-vf",
+                    ",".join(photo_geo_filters),
+                    str(geo_photo_path),
+                ],
+                config,
+            )
+            current_img = geo_photo_path
+
         # 4. Typography badge overlay if requested
         if spec.video.typography is not None:
             typo_spec = spec.video.typography
@@ -166,40 +225,52 @@ def run_edit_spec(
 
     # 1. Silence Jump-Cutting
     if spec.audio.silence_trim:
-        silence_video = work / "step1_silence_cut.mp4"
-        trim_silence(current_clip, silence_video, config, force=True)
-        current_clip = silence_video
-        steps_executed.append("silence_trim")
+        clip_info = probe(current_clip, config)
+        if clip_info.has_audio:
+            silence_video = work / "step1_silence_cut.mp4"
+            trim_silence(current_clip, silence_video, config, force=True)
+            current_clip = silence_video
+            steps_executed.append("silence_trim")
+        else:
+            steps_executed.append("silence_trim_skipped (no audio)")
 
     # 2. Clean speech / Demucs stems
     if spec.audio.clean_speech:
-        stems_out_dir = work / "stems"
-        stems_video = work / "step2_clean_speech.mp4"
-        separate_stems(
-            current_clip,
-            stems_out_dir,
-            config,
-            ml_runner,
-            clean_speech=True,
-            output_video=stems_video,
-            force=True,
-        )
-        current_clip = stems_video
-        steps_executed.append("clean_speech")
+        clip_info = probe(current_clip, config)
+        if clip_info.has_audio:
+            stems_out_dir = work / "stems"
+            stems_video = work / "step2_clean_speech.mp4"
+            separate_stems(
+                current_clip,
+                stems_out_dir,
+                config,
+                ml_runner,
+                clean_speech=True,
+                output_video=stems_video,
+                force=True,
+            )
+            current_clip = stems_video
+            steps_executed.append("clean_speech")
+        else:
+            steps_executed.append("clean_speech_skipped (no audio)")
 
     # 3. Vocal Mastering EQ / Compressor / Denoise
     if spec.audio.master_profile:
-        mastered_video = work / "step3_audio_enhance.mp4"
-        enhance_audio(
-            current_clip,
-            mastered_video,
-            config,
-            profile=spec.audio.master_profile,
-            target_lufs=spec.audio.target_lufs,
-            force=True,
-        )
-        current_clip = mastered_video
-        steps_executed.append(f"audio_master_{spec.audio.master_profile}")
+        clip_info = probe(current_clip, config)
+        if clip_info.has_audio:
+            mastered_video = work / "step3_audio_enhance.mp4"
+            enhance_audio(
+                current_clip,
+                mastered_video,
+                config,
+                profile=spec.audio.master_profile,
+                target_lufs=spec.audio.target_lufs,
+                force=True,
+            )
+            current_clip = mastered_video
+            steps_executed.append(f"audio_master_{spec.audio.master_profile}")
+        else:
+            steps_executed.append(f"audio_master_{spec.audio.master_profile}_skipped (no audio)")
 
     # 4. Visual looks & color grading
     if spec.video.look:
@@ -218,6 +289,74 @@ def run_edit_spec(
             apply_look(current_clip, look_video, spec.video.look, config, runner, force=True)
         current_clip = look_video
         steps_executed.append(f"look_{spec.video.look}")
+
+    # 4b. Geometric & Spatial Transforms (vflip, hflip, rotate, reverse, invert, grayscale)
+    geo_filters: list[str] = []
+    if spec.video.vflip:
+        geo_filters.append("vflip")
+        steps_executed.append("vflip")
+    if spec.video.hflip:
+        geo_filters.append("hflip")
+        steps_executed.append("hflip")
+    if spec.video.rotate == 90:
+        geo_filters.append("transpose=1")
+        steps_executed.append("rotate_90")
+    elif spec.video.rotate == 180:
+        geo_filters.append("vflip,hflip")
+        steps_executed.append("rotate_180")
+    elif spec.video.rotate == 270:
+        geo_filters.append("transpose=2")
+        steps_executed.append("rotate_270")
+    if spec.video.invert_colors:
+        geo_filters.append("negate")
+        steps_executed.append("invert_colors")
+    if spec.video.grayscale:
+        geo_filters.append("hue=s=0")
+        steps_executed.append("grayscale")
+    if spec.video.brightness != 0.0 or spec.video.contrast != 1.0 or spec.video.saturation != 1.0:
+        eq_parts = []
+        if spec.video.brightness != 0.0:
+            eq_parts.append(f"brightness={spec.video.brightness:.2f}")
+        if spec.video.contrast != 1.0:
+            eq_parts.append(f"contrast={spec.video.contrast:.2f}")
+        if spec.video.saturation != 1.0:
+            eq_parts.append(f"saturation={spec.video.saturation:.2f}")
+        geo_filters.append(f"eq={':'.join(eq_parts)}")
+        steps_executed.append(f"color_adjust_{':'.join(eq_parts)}")
+    if spec.video.blur > 0.0:
+        r = max(1, int(spec.video.blur))
+        geo_filters.append(f"boxblur={r}:1")
+        steps_executed.append(f"blur_{r}")
+    if spec.video.sharpen:
+        geo_filters.append("unsharp=5:5:1.2:5:5:0.0")
+        steps_executed.append("sharpen")
+    if spec.video.reverse:
+        geo_filters.append("reverse")
+        steps_executed.append("reverse_video")
+
+    audio_filters: list[str] = []
+    if spec.video.volume_multiplier != 1.0 and not spec.video.mute_audio:
+        audio_filters.append(f"volume={spec.video.volume_multiplier:.2f}")
+        steps_executed.append(f"volume_{spec.video.volume_multiplier}x")
+    if spec.video.reverse and not spec.video.mute_audio:
+        audio_filters.append("areverse")
+
+    if geo_filters or audio_filters or spec.video.mute_audio:
+        geo_video = work / "step4b_geometry.mp4"
+        clip_info = probe(current_clip, config)
+        cmd = ["-i", str(current_clip)]
+        if geo_filters:
+            cmd.extend(["-vf", ",".join(geo_filters)])
+        if spec.video.mute_audio:
+            cmd.append("-an")
+            steps_executed.append("mute_audio")
+        elif audio_filters and clip_info.has_audio:
+            cmd.extend(["-af", ",".join(audio_filters)])
+        elif clip_info.has_audio:
+            cmd.extend(["-c:a", "copy"])
+        cmd.extend(["-c:v", "libx264", "-pix_fmt", "yuv420p", str(geo_video)])
+        run_ffmpeg(cmd, config)
+        current_clip = geo_video
 
     # 5. Reframing / vertical social format
     if spec.video.aspect != "original":
@@ -302,19 +441,23 @@ def run_edit_spec(
 
     # 9. Whisper Subtitles
     if spec.video.subtitles.enabled:
-        subs_video = work / "step9_subtitled.mp4"
-        generate_subtitles(
-            current_clip,
-            subs_video,
-            config,
-            ml_runner,
-            style=spec.video.subtitles.style,
-            language=spec.video.subtitles.language,
-            burn=True,
-            force=True,
-        )
-        current_clip = subs_video
-        steps_executed.append(f"subtitles_{spec.video.subtitles.style}")
+        clip_info = probe(current_clip, config)
+        if clip_info.has_audio:
+            subs_video = work / "step9_subtitled.mp4"
+            generate_subtitles(
+                current_clip,
+                subs_video,
+                config,
+                ml_runner,
+                style=spec.video.subtitles.style,
+                language=spec.video.subtitles.language,
+                burn=True,
+                force=True,
+            )
+            current_clip = subs_video
+            steps_executed.append(f"subtitles_{spec.video.subtitles.style}")
+        else:
+            steps_executed.append("subtitles_skipped (no audio)")
 
     # 10. Procedural / custom SFX
     if spec.audio.sfx_cues:
