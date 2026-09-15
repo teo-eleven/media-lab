@@ -147,8 +147,47 @@ def interpret_prompt(
     # 5. Silence Jump-cut
     silence_trim = any(k in p_lower for k in ROMANIAN_SILENCE_KEYWORDS | ENGLISH_SILENCE_KEYWORDS)
 
-    # 6. Retention Punch-in Zoom
-    punch_zoom = any(k in p_lower for k in ("punch zoom", "zoom", "retention", "apropiere"))
+    # 6. Retention Punch-in Zoom vs Negation & Camera Stabilization
+    no_zoom_triggers = (
+        "scoate zoom",
+        "scoate acel zoom",
+        "fara zoom",
+        "fără zoom",
+        "elimina zoom",
+        "elimină zoom",
+        "anuleaza zoom",
+        "anulează zoom",
+        "fara apropiere",
+        "fără apropiere",
+        "nu pune zoom",
+        "nu mai da zoom",
+    )
+    is_negated_zoom = any(k in p_lower for k in no_zoom_triggers) or bool(
+        re.search(
+            r"\b(scoate|fara|fără|elimina|elimină|anuleaza|anulează|nu)\b.*?\bzoom\b", p_lower
+        )
+    )
+
+    stabilize_triggers = (
+        "stabilizeaza",
+        "stabilizează",
+        "stabilizare",
+        "deshake",
+        "tremur",
+        "am dat zoom out",
+        "zoom out",
+        "se vede prost",
+        "miscare brusca",
+        "netezeste camera",
+        "netezește camera",
+    )
+    stabilize = any(k in p_lower for k in stabilize_triggers)
+
+    punch_zoom = (
+        any(k in p_lower for k in ("punch zoom", "zoom", "retention", "apropiere"))
+        and not is_negated_zoom
+        and not stabilize
+    )
     zoom_interval = 5.0 if punch_zoom else None
 
     # 7. Typography Badge / Title
@@ -579,6 +618,7 @@ def interpret_prompt(
         upscale=upscale_val,
         narrator_text=narrator_text,
         narrator_voice=narrator_voice,
+        stabilize=stabilize,
     )
 
     audio_spec = AudioEditSpec(
@@ -690,6 +730,8 @@ def plan_prompt(prompt: str, source: str | Path, output: str | Path) -> PromptPl
     if spec.photo.depth_blur:
         ops.append("Simulare profunzime de câmp (bokeh)")
 
+    if spec.video.stabilize:
+        ops.append("Stabilizare video 2-pass VidStab (eliminare tremur și compensare zoom)")
     if spec.video.cutout:
         ops.append("Decupare subiect AI (RVM - Robust Video Matting fără green screen)")
     if spec.video.backdrop:
@@ -1019,6 +1061,7 @@ def chat_agent(
         or bool(plan.spec.video.backdrop)
         or plan.spec.video.upscale > 0
         or bool(plan.spec.video.narrator_text)
+        or plan.spec.video.stabilize
         or plan.spec.photo.upscale > 0
         or bool(plan.spec.audio.sfx_cues)
         or plan.spec.audio.music_track is not None

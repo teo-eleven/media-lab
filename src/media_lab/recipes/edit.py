@@ -36,6 +36,7 @@ from ..recipes.sfx import SfxCue, add_sfx
 from ..recipes.silence_trim import trim_silence
 from ..recipes.smart_reframe import smart_reframe
 from ..recipes.speed import change_speed
+from ..recipes.stabilize import stabilize_video
 from ..recipes.stems import separate_stems
 from ..recipes.subtitles import generate_subtitles
 from ..recipes.to_short import to_short
@@ -248,6 +249,13 @@ def run_edit_spec(
         )
         current_clip = narrator_video
         steps_executed.append(f"narrator_voiceover_{spec.video.narrator_voice or 'Ioana'}")
+
+    # 0b. 2-Pass Camera Stabilization & Motion Smoothing
+    if spec.video.stabilize:
+        stabilized_video = work / "step0b_stabilized.mp4"
+        stabilize_video(current_clip, stabilized_video, config, force=True)
+        current_clip = stabilized_video
+        steps_executed.append("vidstab_stabilization")
 
     # 1. Silence Jump-Cutting
     if spec.audio.silence_trim:
