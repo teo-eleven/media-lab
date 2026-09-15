@@ -44,6 +44,7 @@ from .recipes.sfx import SFX_KINDS, SfxCue, add_sfx
 from .recipes.silence_trim import trim_silence
 from .recipes.smart_reframe import VALID_REFRAME_MODES, smart_reframe
 from .recipes.speed import change_speed
+from .recipes.stabilize import stabilize_video
 from .recipes.stems import AUDIO_FORMAT_CHOICES, TWO_STEMS_CHOICES, separate_stems
 from .recipes.subject_ground import ground_subject
 from .recipes.subtitles import generate_subtitles
@@ -368,6 +369,24 @@ def build_parser() -> argparse.ArgumentParser:
     zoom_cmd.add_argument("--duration", type=float, default=2.0, help="Zoom duration in seconds")
     zoom_cmd.add_argument(
         "--scale", type=float, default=1.15, help="Zoom scale factor (e.g. 1.15 for 115%)"
+    )
+
+    stabilize_cmd = subcommands.add_parser(
+        "stabilize",
+        help="2-pass video stabilization and camera motion smoothing (VidStab)",
+    )
+    _add_io_arguments(stabilize_cmd)
+    stabilize_cmd.add_argument(
+        "--smoothing",
+        type=int,
+        default=20,
+        help="Number of frames for motion smoothing trajectory (default: 20)",
+    )
+    stabilize_cmd.add_argument(
+        "--shakiness",
+        type=int,
+        default=8,
+        help="Motion detection shakiness factor 1-10 (default: 8)",
     )
 
     broll_cmd = subcommands.add_parser(
@@ -1360,6 +1379,20 @@ def _run_narrate(args: argparse.Namespace, config: Config, runner: KinoRunner) -
     return 0
 
 
+def _run_stabilize(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    result = stabilize_video(
+        args.input,
+        args.output,
+        config,
+        smoothing=args.smoothing,
+        shakiness=args.shakiness,
+        force=args.force,
+    )
+    print(f"stabilized video written to {result.output}")
+    print(f"  smoothing: {result.smoothing}")
+    return 0
+
+
 def _run_studio(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
     run_studio(
         config,
@@ -1371,6 +1404,7 @@ def _run_studio(args: argparse.Namespace, config: Config, runner: KinoRunner) ->
 
 
 HANDLERS = {
+    "stabilize": _run_stabilize,
     "clean": _run_clean,
     "cutout": _run_cutout,
     "matte": _run_matte,

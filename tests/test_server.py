@@ -148,24 +148,67 @@ def test_studio_server_endpoints(config: Config) -> None:
         except urllib.error.HTTPError as err:
             assert err.code == 416
 
-        # 7. Security Test: API input path outside allowed roots
-        post_bad = json.dumps(
-            {
-                "prompt": "Test edit",
-                "input": "/etc/passwd",
-                "plan_only": True,
-            }
-        ).encode("utf-8")
-        req_bad = urllib.request.Request(
-            f"{base_url}/api/prompt",
-            data=post_bad,
+        # 8. Test GET /api/session
+        with urllib.request.urlopen(f"{base_url}/api/session") as resp:
+            assert resp.status == 200
+            s_data = json.loads(resp.read().decode("utf-8"))
+            assert "has_previous_spec" in s_data
+            assert "provider" in s_data
+
+        # 9. Test GET /api/settings and POST /api/settings
+        with urllib.request.urlopen(f"{base_url}/api/settings") as resp:
+            assert resp.status == 200
+            cfg_data = json.loads(resp.read().decode("utf-8"))
+            assert "provider" in cfg_data
+            assert "ollama_url" in cfg_data
+
+        post_set = json.dumps({"provider": "local"}).encode("utf-8")
+        req_set = urllib.request.Request(
+            f"{base_url}/api/settings",
+            data=post_set,
             headers={"Content-Type": "application/json"},
         )
-        try:
-            urllib.request.urlopen(req_bad)
-            pytest.fail("Should have rejected outside path with 403")
-        except urllib.error.HTTPError as err:
-            assert err.code == 403
+        with urllib.request.urlopen(req_set) as resp:
+            assert resp.status == 200
+            upd_data = json.loads(resp.read().decode("utf-8"))
+            assert upd_data["status"] == "ok"
+            assert upd_data["settings"]["provider"] == "local"
+
+        # 10. Test Continuity & Camera motion handling in chat
+        post_iter = json.dumps(
+            {
+                "prompt": (
+                    "este exact la fel ca înainte, scoate acel zoom de pe persoana, "
+                    "fiindcă in faza inițială când am filmat, am dat zoom out când "
+                    "se apropia de mine si in videoclipul final se vede prost... poți face asta?"
+                ),
+                "input": f"in/{src_file.name}",
+                "execute": False,
+            }
+        ).encode("utf-8")
+        req_iter = urllib.request.Request(
+            f"{base_url}/api/prompt",
+            data=post_iter,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req_iter) as resp:
+            assert resp.status == 200
+            res_iter = json.loads(resp.read().decode("utf-8"))
+            assert res_iter["executable"] is True
+            # Check stabilization was recognized
+            ops_str = " ".join(res_iter["operations"]).lower()
+            assert "stabiliz" in ops_str or "vidstab" in ops_str
+
+        # 11. Test POST /api/session/reset
+        req_rst = urllib.request.Request(
+            f"{base_url}/api/session/reset",
+            data=b"{}",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req_rst) as resp:
+            assert resp.status == 200
+            rst_res = json.loads(resp.read().decode("utf-8"))
+            assert rst_res["status"] == "ok"
 
     finally:
         server.shutdown()

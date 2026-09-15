@@ -22,6 +22,7 @@ from .edit_spec import (
     VideoEditSpec,
 )
 from .kino import KinoRunner
+from .llm import CognitiveBrain
 from .ml_runner import MlRunner
 from .probe import MediaInfo, probe
 from .recipes.edit import EditResult, run_edit_spec
@@ -83,6 +84,9 @@ def interpret_prompt(
     prompt: str,
     source: str | Path,
     output: str | Path,
+    *,
+    previous_spec: EditSpec | None = None,
+    media_info: MediaInfo | None = None,
 ) -> EditSpec:
     """Parse natural language editing prompt into a structured EditSpec.
 
@@ -90,8 +94,36 @@ def interpret_prompt(
     - 'fă-mi un short cu subtitrări galbene, taie pauzele și curăță vocea'
     - 'make a vertical short, cut silence, master voice to podcast, and apply cinematic look'
     - 'retușează portretul: netezește tenul, pune titlu "Nou Episod" jos și adaugă bokeh'
+    - 'este exact la fel ca înainte, scoate acel zoom de pe persoana...'
     """
     p_lower = prompt.lower()
+
+    # Route through CognitiveBrain when previous_spec is available
+    # or continuity keywords are present
+    if previous_spec is not None or any(
+        k in p_lower
+        for k in (
+            "ca inainte",
+            "ca înainte",
+            "la fel ca inainte",
+            "la fel ca înainte",
+            "exact la fel",
+            "pastreaza restul",
+            "păstrează restul",
+            "modifica doar",
+            "modifică doar",
+        )
+    ):
+        brain = CognitiveBrain()
+        b_res = brain.reason(
+            prompt,
+            Path(source),
+            Path(output),
+            media_info=media_info,
+            previous_spec=previous_spec,
+        )
+        if b_res.spec is not None:
+            return b_res.spec
 
     # 1. Video aspect & reframing
     aspect = "original"
@@ -657,9 +689,18 @@ def interpret_prompt(
     )
 
 
-def plan_prompt(prompt: str, source: str | Path, output: str | Path) -> PromptPlan:
+def plan_prompt(
+    prompt: str,
+    source: str | Path,
+    output: str | Path,
+    *,
+    previous_spec: EditSpec | None = None,
+    media_info: MediaInfo | None = None,
+) -> PromptPlan:
     """Generate an inspectable plan of actions from a prompt without executing it."""
-    spec = interpret_prompt(prompt, source, output)
+    spec = interpret_prompt(
+        prompt, source, output, previous_spec=previous_spec, media_info=media_info
+    )
     ops: list[str] = []
 
     if spec.audio.silence_trim:
@@ -758,10 +799,11 @@ def execute_prompt(
     runner: KinoRunner,
     ml_runner: MlRunner,
     *,
+    previous_spec: EditSpec | None = None,
     force: bool = False,
 ) -> EditResult:
     """Interpret prompt and immediately execute the entire edit pipeline."""
-    spec = interpret_prompt(prompt, source, output)
+    spec = interpret_prompt(prompt, source, output, previous_spec=previous_spec)
     return run_edit_spec(spec, config, runner, ml_runner, force=force)
 
 
@@ -769,6 +811,9 @@ def chat_agent(
     prompt: str,
     source: str | Path | None,
     config: Config,
+    *,
+    previous_spec: EditSpec | None = None,
+    history: list[dict[str, str]] | None = None,
 ) -> ChatResponse:
     """Conversational engine providing natural language interaction and plan generation."""
     p = prompt.strip()
@@ -994,6 +1039,51 @@ def chat_agent(
         if source_path
         else Path("out/studio_render.mp4")
     )
+
+    # Route through CognitiveBrain when previous_spec is available
+    # or camera defect / continuity is present
+    has_continuity = previous_spec is not None
+    has_camera_defect = any(
+        k in p_lower
+        for k in (
+            "am dat zoom out",
+            "zoom out",
+            "se vede prost",
+            "scoate zoom",
+            "scoate acel zoom",
+            "fara zoom",
+            "fără zoom",
+            "nu mai da zoom",
+            "stabilizeaza",
+            "stabilizează",
+            "tremur",
+            "ca inainte",
+            "ca înainte",
+            "la fel",
+            "exact la fel",
+        )
+    )
+
+    if has_continuity or has_camera_defect:
+        brain = CognitiveBrain()
+        b_res = brain.reason(
+            p,
+            source_path,
+            target_out,
+            media_info=source_info,
+            previous_spec=previous_spec,
+            history=history,
+        )
+        return ChatResponse(
+            reply=b_res.reply,
+            intent=b_res.intent,
+            plan_operations=b_res.operations,
+            suggested_prompts=b_res.suggested_prompts,
+            spec=b_res.spec,
+            executable=b_res.executable,
+            source_summary=str(source_path.name) if source_path else None,
+        )
+
     plan = plan_prompt(prompt, source_path or "in/clip.mp4", target_out)
     is_baseline_only = len(plan.operations) == 1 and "Conversie" in plan.operations[0]
 

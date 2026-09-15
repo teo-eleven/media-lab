@@ -249,6 +249,43 @@
     }
     .meta-label { color: var(--text-muted); }
     .meta-value { font-weight: 500; }
+
+    /* Settings Modal */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .modal-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      width: 480px;
+      max-width: 90vw;
+      padding: 24px;
+      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.5);
+    }
+    .form-group { margin-bottom: 16px; }
+    .form-label { display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px; font-weight: 500; }
+    .form-input, .form-select {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      color: var(--text-main);
+      font-size: 0.9rem;
+      outline: none;
+    }
+    .form-input:focus, .form-select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-glow);
+    }
   </style>
 </head>
 <body>
@@ -257,9 +294,13 @@
       <span>🎬</span>
       <span>Media Lab Studio</span>
     </div>
-    <div class="badge-status">
-      <span class="dot"></span>
-      <span>Studio Activ (Apple Silicon Local)</span>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <div class="badge-status" id="brainBadge" style="cursor: pointer;" onclick="openSettingsModal()" title="Configurează creierul AI">
+        <span class="dot"></span>
+        <span id="brainBadgeText">🧠 Creier AI: Local Semantic</span>
+      </div>
+      <button class="btn secondary" style="padding: 4px 10px; font-size: 0.78rem;" onclick="resetSession()" title="Șterge istoricul și începe de la zero">🔄 Reset Context</button>
+      <button class="btn secondary" style="padding: 4px 10px; font-size: 0.78rem;" onclick="openSettingsModal()">⚙️ Setări</button>
     </div>
   </header>
 
@@ -549,7 +590,128 @@
       messagesArea.scrollTop = messagesArea.scrollHeight;
     }
 
-    window.onload = loadFiles;
+    async function loadSessionInfo() {
+      try {
+        const res = await fetch('/api/session');
+        const data = await res.json();
+        const badge = document.getElementById('brainBadgeText');
+        const providerName = data.provider === 'gemini' ? 'Google Gemini' : (data.provider === 'ollama' ? 'Local Ollama' : (data.provider === 'openai' ? 'OpenAI GPT' : 'Local Semantic'));
+        badge.textContent = `🧠 Creier AI: ${providerName}`;
+      } catch (e) {
+        console.error("Session info error:", e);
+      }
+    }
+
+    async function loadSettings() {
+      try {
+        const res = await fetch('/api/settings');
+        const data = await res.json();
+        document.getElementById('settingProvider').value = data.provider || 'auto';
+        document.getElementById('settingOllamaUrl').value = data.ollama_url || 'http://localhost:11434';
+        toggleProviderInputs();
+      } catch (e) {
+        console.error("Settings load error:", e);
+      }
+    }
+
+    function toggleProviderInputs() {
+      const p = document.getElementById('settingProvider').value;
+      document.getElementById('geminiKeyGroup').style.display = (p === 'gemini' || p === 'auto') ? 'block' : 'none';
+      document.getElementById('openaiKeyGroup').style.display = (p === 'openai') ? 'block' : 'none';
+      document.getElementById('ollamaUrlGroup').style.display = (p === 'ollama') ? 'block' : 'none';
+    }
+
+    function openSettingsModal() {
+      loadSettings();
+      document.getElementById('settingsModal').style.display = 'flex';
+    }
+
+    function closeSettingsModal() {
+      document.getElementById('settingsModal').style.display = 'none';
+    }
+
+    async function saveSettings() {
+      const p = document.getElementById('settingProvider').value;
+      const gKey = document.getElementById('settingGeminiKey').value.trim();
+      const oKey = document.getElementById('settingOpenaiKey').value.trim();
+      const olUrl = document.getElementById('settingOllamaUrl').value.trim();
+
+      const payload = { provider: p };
+      if (gKey) payload.gemini_api_key = gKey;
+      if (oKey) payload.openai_api_key = oKey;
+      if (olUrl) payload.ollama_url = olUrl;
+
+      try {
+        await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        closeSettingsModal();
+        await loadSessionInfo();
+      } catch (e) {
+        alert("Eroare la salvarea setărilor: " + e.message);
+      }
+    }
+
+    async function resetSession() {
+      try {
+        await fetch('/api/session/reset', { method: 'POST' });
+        const messagesArea = document.getElementById('messagesArea');
+        const resetNotice = document.createElement('div');
+        resetNotice.className = 'message agent';
+        resetNotice.innerHTML = `<em>🔄 Contextul a fost resetat. Randările viitoare nu vor mai moșteni setările anterioare decât dacă specifici explicit.</em>`;
+        messagesArea.appendChild(resetNotice);
+        messagesArea.scrollTop = messagesArea.scrollHeight;
+        await loadSessionInfo();
+      } catch (e) {
+        console.error("Reset error:", e);
+      }
+    }
+
+    window.onload = async () => {
+      await loadFiles();
+      await loadSessionInfo();
+    };
   </script>
+
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="settingsModal" onclick="if(event.target === this) closeSettingsModal()">
+    <div class="modal-card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h3 style="font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">⚙️ Configurare Creier AI (LLM)</h3>
+        <button class="btn secondary" style="padding: 2px 8px;" onclick="closeSettingsModal()">✕</button>
+      </div>
+      <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 16px;">
+        Alege motorul de raționare cognitivă pentru interpretarea comenzilor complexe, gestionarea continuității și compensarea defectelor de cameră.
+      </p>
+      <div class="form-group">
+        <label class="form-label">Furnizor AI (Provider)</label>
+        <select class="form-select" id="settingProvider" onchange="toggleProviderInputs()">
+          <option value="auto">Auto (Gemini dacă e cheie, altfel Local Semantic)</option>
+          <option value="gemini">Google Gemini (Cloud via httpx)</option>
+          <option value="ollama">Local Ollama (Offline / localhost:11434)</option>
+          <option value="openai">OpenAI (GPT-4o)</option>
+          <option value="local">Local Semantic Engine (100% Offline, 0 Chei)</option>
+        </select>
+      </div>
+      <div class="form-group" id="geminiKeyGroup">
+        <label class="form-label">Google Gemini API Key (opțional)</label>
+        <input type="password" class="form-input" id="settingGeminiKey" placeholder="AIzaSy...">
+      </div>
+      <div class="form-group" id="openaiKeyGroup" style="display: none;">
+        <label class="form-label">OpenAI API Key (opțional)</label>
+        <input type="password" class="form-input" id="settingOpenaiKey" placeholder="sk-...">
+      </div>
+      <div class="form-group" id="ollamaUrlGroup" style="display: none;">
+        <label class="form-label">Ollama Host URL</label>
+        <input type="text" class="form-input" id="settingOllamaUrl" value="http://localhost:11434">
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;">
+        <button class="btn secondary" onclick="closeSettingsModal()">Anulează</button>
+        <button class="btn" onclick="saveSettings()">Salvează Setările</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

@@ -13,17 +13,29 @@ import re
 import threading
 import urllib.parse
 import webbrowser
+from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
 from .config import Config
+from .edit_spec import EditSpec
 from .kino import KinoRunner
+from .llm import LLMConfig, spec_to_dict
 from .ml_runner import MlRunner
 from .prompt_agent import chat_agent, execute_prompt
 
 STATIC_DIR: Path = Path(__file__).parent / "static"
+
+
+@dataclass
+class StudioSession:
+    """In-memory conversational and editing session state for Media Lab Studio."""
+
+    last_spec: EditSpec | None = None
+    chat_history: list[dict[str, str]] = field(default_factory=list)
+    llm_config: LLMConfig = field(default_factory=LLMConfig.from_env)
 
 
 def get_studio_html() -> str:
@@ -40,6 +52,7 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
     config: Config
     runner: KinoRunner
     ml_runner: MlRunner
+    session: StudioSession = StudioSession()
 
     def do_GET(self) -> None:
         url = urllib.parse.urlparse(self.path)
@@ -53,6 +66,14 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
             self._handle_api_files()
             return
 
+        if path == "/api/session":
+            self._handle_api_session()
+            return
+
+        if path == "/api/settings":
+            self._handle_api_settings_get()
+            return
+
         if path.startswith("/media/"):
             self._handle_media_stream(path[len("/media/") :])
             return
@@ -63,6 +84,14 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
         url = urllib.parse.urlparse(self.path)
         if url.path == "/api/prompt":
             self._handle_api_prompt()
+            return
+
+        if url.path == "/api/session/reset":
+            self._handle_api_session_reset()
+            return
+
+        if url.path == "/api/settings":
+            self._handle_api_settings_post()
             return
 
         self.send_error(HTTPStatus.NOT_FOUND, "Endpoint not found")
@@ -268,10 +297,21 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
                 )
                 return
 
-        chat_res = chat_agent(prompt_str, src_path, self.config)
+        chat_res = chat_agent(
+            prompt_str,
+            src_path,
+            self.config,
+            previous_spec=self.session.last_spec,
+            history=self.session.chat_history,
+        )
         is_informational = chat_res.intent in ("greeting", "help", "inspect")
 
         if not execute or is_informational:
+            if chat_res.spec is not None and not is_informational:
+                self.session.last_spec = chat_res.spec
+                self.session.chat_history.append({"role": "user", "content": prompt_str})
+                self.session.chat_history.append({"role": "agent", "content": chat_res.reply})
+
             self._send_json_response(
                 {
                     "status": "ok",
@@ -312,8 +352,15 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
                 self.config,
                 self.runner,
                 self.ml_runner,
+                previous_spec=self.session.last_spec,
                 force=True,
             )
+            # Update session state
+            if chat_res.spec is not None:
+                self.session.last_spec = chat_res.spec
+            self.session.chat_history.append({"role": "user", "content": prompt_str})
+            self.session.chat_history.append({"role": "agent", "content": chat_res.reply})
+
             skipped_audio = [s for s in result.steps_executed if "skipped" in s]
             note = ""
             if skipped_audio:
@@ -340,6 +387,74 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
             )
         except Exception as exc:
             self._send_json_response({"error": str(exc)}, status=500)
+
+    def _handle_api_session(self) -> None:
+        """Return state of current editing session and active EditSpec."""
+        self._send_json_response(
+            {
+                "has_previous_spec": self.session.last_spec is not None,
+                "history_length": len(self.session.chat_history),
+                "last_spec": (
+                    spec_to_dict(self.session.last_spec)
+                    if self.session.last_spec is not None
+                    else None
+                ),
+                "provider": self.session.llm_config.provider,
+            }
+        )
+
+    def _handle_api_session_reset(self) -> None:
+        """Reset session state to start fresh."""
+        self.session.last_spec = None
+        self.session.chat_history.clear()
+        self._send_json_response({"status": "ok", "message": "Session reset successfully"})
+
+    def _handle_api_settings_get(self) -> None:
+        """Return active LLM provider configuration."""
+        cfg = self.session.llm_config
+        self._send_json_response(
+            {
+                "provider": cfg.provider,
+                "gemini_configured": bool(cfg.gemini_api_key),
+                "openai_configured": bool(cfg.openai_api_key),
+                "gemini_model": cfg.gemini_model,
+                "openai_model": cfg.openai_model,
+                "ollama_url": cfg.ollama_url,
+                "ollama_model": cfg.ollama_model,
+            }
+        )
+
+    def _handle_api_settings_post(self) -> None:
+        """Update runtime LLM settings."""
+        content_length = int(self.headers.get("Content-Length", 0))
+        post_data = self.rfile.read(content_length)
+        try:
+            payload = json.loads(post_data.decode("utf-8"))
+        except Exception as err:
+            self._send_json_response({"error": f"Invalid JSON payload: {err}"}, status=400)
+            return
+
+        cfg = self.session.llm_config
+        if "provider" in payload:
+            cfg.provider = str(payload["provider"])
+        if "gemini_api_key" in payload and payload["gemini_api_key"]:
+            cfg.gemini_api_key = str(payload["gemini_api_key"])
+        if "openai_api_key" in payload and payload["openai_api_key"]:
+            cfg.openai_api_key = str(payload["openai_api_key"])
+        if "ollama_url" in payload and payload["ollama_url"]:
+            cfg.ollama_url = str(payload["ollama_url"])
+
+        self._send_json_response(
+            {
+                "status": "ok",
+                "settings": {
+                    "provider": cfg.provider,
+                    "gemini_configured": bool(cfg.gemini_api_key),
+                    "openai_configured": bool(cfg.openai_api_key),
+                    "ollama_url": cfg.ollama_url,
+                },
+            }
+        )
 
 
 def create_server(
