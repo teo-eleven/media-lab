@@ -343,6 +343,147 @@ def interpret_prompt(
     elif any(k in p_lower for k in ("mai incet", "mai încet", "volum mai mic", "scade volum")):
         volume_mult = 0.6
 
+    # 16. AI Neural Cutout (RVM) & Background Replacement
+    cutout = any(
+        k in p_lower
+        for k in (
+            "scoate fundalul",
+            "elimina fundalul",
+            "elimină fundalul",
+            "fara fundal",
+            "fără fundal",
+            "transparent",
+            "cutout",
+            "rvm",
+            "decupeaza",
+            "decupează",
+            "decupare",
+            "remove background",
+            "background removal",
+            "izoleaza persoana",
+            "izolează persoana",
+        )
+    )
+    backdrop: str | None = None
+    if any(
+        k in p_lower
+        for k in (
+            "schimba fundalul",
+            "schimbă fundalul",
+            "pune fundal",
+            "alt fundal",
+            "inlocuieste fundalul",
+            "înlocuiește fundalul",
+            "replace background",
+            "new background",
+            "backdrop",
+        )
+    ):
+        cutout = True
+        backdrop = "in/punto-bg.png" if "punto" in p_lower else "in/demo-bg.png"
+
+    # 17. AI Neural Super-Resolution (Real-ESRGAN Upscaling)
+    upscale_val = 0
+    if any(
+        k in p_lower
+        for k in (
+            "upscale",
+            "mareste rezolutia",
+            "mărește rezoluția",
+            "creste rezolutia",
+            "crește rezoluția",
+            "creste calitatea",
+            "crește calitatea",
+            "super rezolutie",
+            "super-rezoluție",
+            "super resolution",
+            "realesrgan",
+            "claritate maxima",
+            "claritate maximă",
+            "4k",
+            "hd",
+        )
+    ):
+        upscale_val = 4 if "4k" in p_lower else 2
+
+    # 18. Local TTS Voiceover Narrator
+    narrator_text: str | None = None
+    narrator_voice = "Daniel" if ("english" in p_lower or "engleza" in p_lower) else "Ioana"
+    if any(
+        k in p_lower
+        for k in (
+            "narator",
+            "naratiune",
+            "narațiune",
+            "voce de prezentare",
+            "voiceover",
+            "povestitor",
+            "adaugă voce",
+            "adauga voce",
+            "spune",
+        )
+    ):
+        narrator_match = re.search(r'["\']([^"\']+)["\']', prompt)
+        if narrator_match:
+            narrator_text = narrator_match.group(1)
+        else:
+            narrator_text = "Bun venit la producția Media Lab Studio!"
+
+    # 19. Background Music Bed with Ducking
+    music_track: str | None = None
+    if any(
+        k in p_lower
+        for k in (
+            "muzica",
+            "muzică",
+            "music",
+            "pune muzica",
+            "pune muzică",
+            "adauga muzica",
+            "adaugă muzică",
+            "pe fundal",
+            "soundtrack",
+            "coloana sonora",
+            "coloană sonoră",
+        )
+    ):
+        music_track = "in/demo2-music.m4a" if "demo2" in p_lower else "in/demo-music.m4a"
+
+    # 20. Comprehensive Studio Production autonomous trigger
+    full_production_triggers = (
+        "tot ce are nevoie",
+        "tot ce avem",
+        "tot ce am descarcat",
+        "tot ce am descărcat",
+        "clip complet",
+        "productie completa",
+        "producție completă",
+        "video viral",
+        "viral",
+        "fa tot",
+        "fă tot",
+        "fa ceva misto",
+        "fă ceva mișto",
+        "studio 360",
+        "fa-l complet",
+        "fă-l complet",
+    )
+    if any(k in p_lower for k in full_production_triggers):
+        if aspect == "original":
+            aspect = "9:16"
+            smart_reframe = True
+        subtitles_enabled = True
+        clean_speech = True
+        master_profile = "podcast"
+        silence_trim = True
+        punch_zoom = True
+        has_progress_bar = True
+        sharpen = True
+        if not look:
+            look = "cinematic"
+        if not music_track:
+            music_track = "in/demo-music.m4a"
+
     # 15. Actionable prompt fallback
     action_roots = (
         "fa",
@@ -399,6 +540,11 @@ def interpret_prompt(
         or retouch
         or depth_blur
         or subtitles_enabled
+        or cutout
+        or backdrop
+        or upscale_val > 0
+        or narrator_text
+        or music_track
     ):
         sharpen = True
 
@@ -411,6 +557,8 @@ def interpret_prompt(
         look=look,
         subtitles=SubtitleEditSpec(enabled=subtitles_enabled, style=sub_style),
         typography=typo_spec,
+        cutout=cutout,
+        backdrop=backdrop,
         speed=speed_factor,
         progress_bar=has_progress_bar,
         progress_bar_color=pb_color,
@@ -428,12 +576,16 @@ def interpret_prompt(
         sharpen=sharpen,
         mute_audio=mute_audio,
         volume_multiplier=volume_mult,
+        upscale=upscale_val,
+        narrator_text=narrator_text,
+        narrator_voice=narrator_voice,
     )
 
     audio_spec = AudioEditSpec(
         clean_speech=clean_speech,
         master_profile=master_profile,
         silence_trim=silence_trim,
+        music_track=music_track,
         sfx_cues=tuple(sfx_cues),
     )
 
@@ -453,6 +605,7 @@ def interpret_prompt(
         saturation=saturation,
         blur=blur_val,
         sharpen=sharpen,
+        upscale=upscale_val,
     )
 
     return EditSpec(
@@ -536,6 +689,18 @@ def plan_prompt(prompt: str, source: str | Path, output: str | Path) -> PromptPl
         ops.append("Retușare ten și netezire facială")
     if spec.photo.depth_blur:
         ops.append("Simulare profunzime de câmp (bokeh)")
+
+    if spec.video.cutout:
+        ops.append("Decupare subiect AI (RVM - Robust Video Matting fără green screen)")
+    if spec.video.backdrop:
+        ops.append(f"Compoziție pe fundal ({spec.video.backdrop})")
+    if spec.video.upscale > 0 or spec.photo.upscale > 0:
+        scale = spec.video.upscale or spec.photo.upscale
+        ops.append(f"Super-rezoluție AI Real-ESRGAN ({scale}x)")
+    if spec.video.narrator_text:
+        ops.append(f"Narator vocal local TTS ({spec.video.narrator_voice or 'Ioana'})")
+    if spec.audio.music_track:
+        ops.append(f"Coloană sonoră cu ducking ({spec.audio.music_track})")
 
     if not ops:
         ops.append("Conversie și verificare de bază")
@@ -850,6 +1015,11 @@ def chat_agent(
         or plan.spec.photo.saturation != 1.0
         or plan.spec.photo.blur > 0
         or plan.spec.photo.sharpen
+        or plan.spec.video.cutout
+        or bool(plan.spec.video.backdrop)
+        or plan.spec.video.upscale > 0
+        or bool(plan.spec.video.narrator_text)
+        or plan.spec.photo.upscale > 0
         or bool(plan.spec.audio.sfx_cues)
         or plan.spec.audio.music_track is not None
     )

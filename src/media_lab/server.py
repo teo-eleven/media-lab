@@ -219,6 +219,7 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
         prompt_str = payload.get("prompt", "").strip()
         input_str = payload.get("input")
         execute = bool(payload.get("execute", False))
+        print(f"🎬 Studio received prompt: {prompt_str!r} (input={input_str}, execute={execute})")
 
         if not prompt_str:
             self._send_json_response({"error": "Prompt cannot be empty"}, status=400)
@@ -320,6 +321,10 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
                     "\n\n> ℹ️ **Notă:** Fișierul sursă nu are pistă audio. "
                     "Etapele vocale au fost omise, iar efectele video au fost aplicate."
                 )
+            print(
+                f"🎬 Studio execution completed: {result.output.name} "
+                f"(steps={result.steps_executed})"
+            )
             self._send_json_response(
                 {
                     "status": "ok",

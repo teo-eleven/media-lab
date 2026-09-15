@@ -82,6 +82,9 @@ class VideoEditSpec:
     sharpen: bool = False
     mute_audio: bool = False
     volume_multiplier: float = 1.0
+    upscale: int = 0
+    narrator_text: str | None = None
+    narrator_voice: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +105,7 @@ class PhotoEditSpec:
     saturation: float = 1.0
     blur: float = 0.0
     sharpen: bool = False
+    upscale: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,6 +228,9 @@ def parse_edit_spec(source: str | Path | dict[str, Any]) -> EditSpec:
         sharpen=bool(video_dict.get("sharpen", False)),
         mute_audio=bool(video_dict.get("mute_audio", False)),
         volume_multiplier=float(video_dict.get("volume_multiplier", 1.0)),
+        upscale=int(video_dict.get("upscale", 0)),
+        narrator_text=video_dict.get("narrator_text"),
+        narrator_voice=video_dict.get("narrator_voice"),
     )
 
     audio_dict = raw.get("audio", {})
@@ -275,6 +282,7 @@ def parse_edit_spec(source: str | Path | dict[str, Any]) -> EditSpec:
         saturation=float(photo_dict.get("saturation", 1.0)),
         blur=float(photo_dict.get("blur", 0.0)),
         sharpen=bool(photo_dict.get("sharpen", False)),
+        upscale=int(photo_dict.get("upscale", 0)),
     )
 
     return EditSpec(
