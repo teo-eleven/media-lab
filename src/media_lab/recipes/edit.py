@@ -22,10 +22,13 @@ from ..paths import ensure_readable_source, ensure_writable_output, work_directo
 from ..probe import MediaInfo, probe
 from ..recipes.audio_bed import add_music_bed
 from ..recipes.audio_enhance import enhance_audio
+from ..recipes.backdrop import place_on_backdrop
 from ..recipes.broll import BrollCut, insert_broll
 from ..recipes.face_retouch import retouch_portrait
 from ..recipes.filters import apply_look, apply_look_chain
 from ..recipes.inpainting import inpaint_image
+from ..recipes.matte_video import matte_video
+from ..recipes.narrator import generate_narration
 from ..recipes.photo import IMAGE_EXTENSIONS, edit_photo
 from ..recipes.progress_bar import add_progress_bar
 from ..recipes.punch_zoom import punch_zoom
@@ -37,6 +40,7 @@ from ..recipes.stems import separate_stems
 from ..recipes.subtitles import generate_subtitles
 from ..recipes.to_short import to_short
 from ..recipes.typography import TypographyStyle, apply_typography
+from ..recipes.upscale import upscale
 from ..verify import Expectations, verify_render
 
 
@@ -184,6 +188,14 @@ def run_edit_spec(
             )
             current_img = geo_photo_path
 
+        # 3c. Photo AI Neural Super-Resolution (Real-ESRGAN Upscale)
+        if spec.photo.upscale > 0:
+            scale = 2 if spec.photo.upscale <= 2 else 4
+            upscaled_photo = work / "step3c_upscaled.png"
+            upscale(current_img, upscaled_photo, config, ml_runner, scale=scale, force=True)
+            current_img = upscaled_photo
+            photo_steps.append(f"realesrgan_upscale_{scale}x")
+
         # 4. Typography badge overlay if requested
         if spec.video.typography is not None:
             typo_spec = spec.video.typography
@@ -222,6 +234,20 @@ def run_edit_spec(
     work = work_directory(config, "edit_orchestrator")
     current_clip = resolved_source
     steps_executed: list[str] = []
+
+    # 0. TTS Narrator Voiceover
+    if spec.video.narrator_text:
+        narrator_video = work / "step0_narrator.mp4"
+        generate_narration(
+            spec.video.narrator_text,
+            narrator_video,
+            config,
+            voice=spec.video.narrator_voice or "Ioana",
+            video_source=current_clip,
+            force=True,
+        )
+        current_clip = narrator_video
+        steps_executed.append(f"narrator_voiceover_{spec.video.narrator_voice or 'Ioana'}")
 
     # 1. Silence Jump-Cutting
     if spec.audio.silence_trim:
@@ -271,6 +297,24 @@ def run_edit_spec(
             steps_executed.append(f"audio_master_{spec.audio.master_profile}")
         else:
             steps_executed.append(f"audio_master_{spec.audio.master_profile}_skipped (no audio)")
+
+    # 3b. AI Neural Cutout (RVM) & Backdrop Compositing
+    if spec.video.cutout or spec.video.backdrop:
+        matte_video_path = work / "step3b_matte.mov"
+        matte_video(current_clip, matte_video_path, config, ml_runner, force=True)
+        if spec.video.backdrop:
+            bg_path = Path(spec.video.backdrop)
+            if not bg_path.is_absolute():
+                bg_path = (config.root / bg_path).resolve()
+            if not bg_path.exists():
+                bg_path = (config.in_dir / "demo-bg.png").resolve()
+            comp_video = work / "step3c_backdrop.mp4"
+            place_on_backdrop(matte_video_path, bg_path, comp_video, config, runner, force=True)
+            current_clip = comp_video
+            steps_executed.append("backdrop_composite")
+        else:
+            current_clip = matte_video_path
+            steps_executed.append("rvm_cutout")
 
     # 4. Visual looks & color grading
     if spec.video.look:
@@ -495,19 +539,36 @@ def run_edit_spec(
         current_clip = pb_video
         steps_executed.append("progress_bar")
 
+    # 12b. AI Neural Super-Resolution (Real-ESRGAN Upscale)
+    if spec.video.upscale > 0:
+        scale = 2 if spec.video.upscale <= 2 else 4
+        upscaled_video = work / "step12b_upscale.mp4"
+        upscale(current_clip, upscaled_video, config, ml_runner, scale=scale, force=True)
+        current_clip = upscaled_video
+        steps_executed.append(f"realesrgan_upscale_{scale}x")
+
     # 13. Background music mixing with ducking
+    music_handled = False
     if spec.audio.music_track:
-        add_music_bed(
-            current_clip,
-            spec.audio.music_track,
-            resolved_output,
-            config,
-            target_lufs=spec.audio.target_lufs,
-            music_volume=spec.audio.music_volume,
-            force=force,
-        )
-        steps_executed.append("music_bed")
-    else:
+        music_p = Path(spec.audio.music_track)
+        if not music_p.is_absolute():
+            music_p = (config.root / music_p).resolve()
+        if not music_p.exists():
+            music_p = (config.in_dir / "demo-music.m4a").resolve()
+        if music_p.is_file():
+            add_music_bed(
+                current_clip,
+                music_p,
+                resolved_output,
+                config,
+                target_lufs=spec.audio.target_lufs,
+                music_volume=spec.audio.music_volume,
+                force=force,
+            )
+            steps_executed.append("music_bed")
+            music_handled = True
+
+    if not music_handled:
         # Finalize output
         if current_clip.suffix.lower() == resolved_output.suffix.lower():
             shutil.copy2(current_clip, resolved_output)
