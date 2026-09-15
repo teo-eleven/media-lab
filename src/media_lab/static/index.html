@@ -329,6 +329,8 @@
         const container = document.getElementById('fileList');
         container.innerHTML = '';
 
+        let defaultCandidate = null;
+
         ['in', 'out', 'work'].forEach(folder => {
           const files = data[folder] || [];
           if (files.length === 0) return;
@@ -338,14 +340,24 @@
           container.appendChild(groupHeader);
 
           files.forEach(f => {
+            if (!defaultCandidate && (folder === 'in' || folder === 'out') && f.type === 'video') {
+              defaultCandidate = { folder, ...f };
+            }
             const item = document.createElement('div');
             item.className = 'file-item';
+            if (currentSelectedFile && currentSelectedFile.folder === folder && currentSelectedFile.name === f.name) {
+              item.classList.add('active');
+            }
             const icon = f.type === 'video' ? '🎬' : (f.type === 'audio' ? '🎵' : '🖼️');
             item.innerHTML = `<span class="file-icon">${icon}</span><span class="file-name">${escapeHtml(f.name)}</span><span class="file-size">${escapeHtml(f.size_human)}</span>`;
             item.onclick = (e) => selectFile(folder, f, e);
             container.appendChild(item);
           });
         });
+
+        if (!currentSelectedFile && defaultCandidate) {
+          selectFile(defaultCandidate.folder, defaultCandidate, null);
+        }
       } catch (err) {
         console.error("Error loading files:", err);
       }
@@ -417,14 +429,14 @@
       // Agent placeholder
       const agentMsg = document.createElement('div');
       agentMsg.className = 'message agent';
-      agentMsg.innerHTML = '<em>Agentul analizează cererea ta...</em>';
+      agentMsg.innerHTML = `<em>⚙️ Lucrez la cererea ta: <strong>"${escapeHtml(text)}"</strong>... Procesez prin motorul Media Lab Studio...</em>`;
       messagesArea.appendChild(agentMsg);
       messagesArea.scrollTop = messagesArea.scrollHeight;
 
       const payload = {
         prompt: text,
         input: currentSelectedFile ? `${currentSelectedFile.folder}/${currentSelectedFile.name}` : null,
-        execute: false
+        execute: true
       };
 
       try {
@@ -436,39 +448,45 @@
         const data = await res.json();
 
         if (data.error) {
-          agentMsg.innerHTML = `<span style="color: var(--danger);">Eroare: ${escapeHtml(data.error)}</span>`;
+          agentMsg.innerHTML = `<span style="color: var(--danger);">❌ Eroare la procesare: ${escapeHtml(data.error)}</span>`;
           return;
         }
 
-        let replyHtml = renderMarkdown(data.reply || '');
-
-        // If an executable plan is ready, append the plan card with action button
-        if (data.executable && data.operations && data.operations.length > 0) {
-          let stepsHtml = data.operations.map((op, i) =>
-            `<div class="plan-step"><span class="step-badge">${i+1}</span><span>${escapeHtml(op)}</span></div>`
+        // Render completed execution
+        if (data.steps && data.steps.length > 0) {
+          let stepsHtml = data.steps.map(step =>
+            `<div class="plan-step"><span class="step-badge">✓</span><span>${escapeHtml(step)}</span></div>`
           ).join('');
-          const encodedPrompt = encodeURIComponent(text);
-          replyHtml += `
-            <div class="plan-card" style="margin-top: 12px;">
-              <div style="font-weight: 700; margin-bottom: 8px; color: #fff;">📋 Etape de randare:</div>
+
+          agentMsg.innerHTML = `
+            <div>${renderMarkdown(data.reply || '🎉 Randare completată cu succes!')}</div>
+            <div class="plan-card" style="margin-top: 10px;">
+              <div style="font-weight: 700; margin-bottom: 8px; color: #fff;">✅ Etape finalizate:</div>
               ${stepsHtml}
-              <button class="btn" style="margin-top: 12px; width: 100%; justify-content: center; font-size: 0.95rem; padding: 12px;" onclick="executePlan('${encodedPrompt}')">
-                🚀 Lansează Randarea Acum
-              </button>
+            </div>
+            <div style="margin-top: 10px; font-weight: 600;">
+              Fișier generat: <code style="color: var(--success);">${escapeHtml(data.output)}</code>
             </div>
           `;
-        }
 
-        // If suggestions are provided, append interactive chips
-        if (data.suggested_prompts && data.suggested_prompts.length > 0) {
-          let chipsHtml = data.suggested_prompts.map(p => {
-            const safeP = escapeHtml(p).replace(/'/g, "\\'");
-            return `<span class="chip" style="font-size: 0.76rem;" onclick="applySuggestion('${safeP}')">${escapeHtml(p)}</span>`;
-          }).join('');
-          replyHtml += `<div style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px;">${chipsHtml}</div>`;
-        }
+          await loadFiles();
 
-        agentMsg.innerHTML = replyHtml;
+          // Immediately select and display newly rendered output
+          if (data.output) {
+            selectFile('out', { name: data.output, type: 'video', size_human: 'Randat' }, null);
+          }
+        } else {
+          // Informational response (greeting, help, inspection)
+          let replyHtml = renderMarkdown(data.reply || '');
+          if (data.suggested_prompts && data.suggested_prompts.length > 0) {
+            let chipsHtml = data.suggested_prompts.map(p => {
+              const safeP = escapeHtml(p).replace(/'/g, "\\'");
+              return `<span class="chip" style="font-size: 0.76rem;" onclick="applySuggestion('${safeP}')">${escapeHtml(p)}</span>`;
+            }).join('');
+            replyHtml += `<div style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px;">${chipsHtml}</div>`;
+          }
+          agentMsg.innerHTML = replyHtml;
+        }
       } catch (err) {
         agentMsg.innerHTML = `<span style="color: var(--danger);">Eroare rețea: ${escapeHtml(err.message)}</span>`;
       }

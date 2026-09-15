@@ -279,3 +279,14 @@ def test_geometric_transforms_prompt(config: Config) -> None:
     assert exec_res.output.is_file()
     assert exec_res.media.has_video is True
     assert "vflip" in exec_res.steps_executed
+
+    # 5. Visual filters: brightness, contrast, blur, sharpen, mute
+    spec_filters = interpret_prompt(
+        "fa clipul mai luminos, creste contrastul, blureaza si da pe mut",
+        "in/clip.mp4",
+        "out/filtered.mp4",
+    )
+    assert spec_filters.video.brightness > 0
+    assert spec_filters.video.contrast > 1.0
+    assert spec_filters.video.blur > 0
+    assert spec_filters.video.mute_audio is True

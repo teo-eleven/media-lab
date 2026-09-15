@@ -148,6 +148,27 @@ def run_edit_spec(
         if spec.photo.grayscale:
             photo_geo_filters.append("hue=s=0")
             photo_steps.append("grayscale")
+        if (
+            spec.photo.brightness != 0.0
+            or spec.photo.contrast != 1.0
+            or spec.photo.saturation != 1.0
+        ):
+            eq_parts = []
+            if spec.photo.brightness != 0.0:
+                eq_parts.append(f"brightness={spec.photo.brightness:.2f}")
+            if spec.photo.contrast != 1.0:
+                eq_parts.append(f"contrast={spec.photo.contrast:.2f}")
+            if spec.photo.saturation != 1.0:
+                eq_parts.append(f"saturation={spec.photo.saturation:.2f}")
+            photo_geo_filters.append(f"eq={':'.join(eq_parts)}")
+            photo_steps.append("color_adjust")
+        if spec.photo.blur > 0.0:
+            r = max(1, int(spec.photo.blur))
+            photo_geo_filters.append(f"boxblur={r}:1")
+            photo_steps.append(f"blur_{r}")
+        if spec.photo.sharpen:
+            photo_geo_filters.append("unsharp=5:5:1.2:5:5:0.0")
+            photo_steps.append("sharpen")
 
         if photo_geo_filters:
             geo_photo_path = work / "step3b_photo_geometry.png"
@@ -292,16 +313,45 @@ def run_edit_spec(
     if spec.video.grayscale:
         geo_filters.append("hue=s=0")
         steps_executed.append("grayscale")
+    if spec.video.brightness != 0.0 or spec.video.contrast != 1.0 or spec.video.saturation != 1.0:
+        eq_parts = []
+        if spec.video.brightness != 0.0:
+            eq_parts.append(f"brightness={spec.video.brightness:.2f}")
+        if spec.video.contrast != 1.0:
+            eq_parts.append(f"contrast={spec.video.contrast:.2f}")
+        if spec.video.saturation != 1.0:
+            eq_parts.append(f"saturation={spec.video.saturation:.2f}")
+        geo_filters.append(f"eq={':'.join(eq_parts)}")
+        steps_executed.append(f"color_adjust_{':'.join(eq_parts)}")
+    if spec.video.blur > 0.0:
+        r = max(1, int(spec.video.blur))
+        geo_filters.append(f"boxblur={r}:1")
+        steps_executed.append(f"blur_{r}")
+    if spec.video.sharpen:
+        geo_filters.append("unsharp=5:5:1.2:5:5:0.0")
+        steps_executed.append("sharpen")
     if spec.video.reverse:
         geo_filters.append("reverse")
         steps_executed.append("reverse_video")
 
-    if geo_filters:
+    audio_filters: list[str] = []
+    if spec.video.volume_multiplier != 1.0 and not spec.video.mute_audio:
+        audio_filters.append(f"volume={spec.video.volume_multiplier:.2f}")
+        steps_executed.append(f"volume_{spec.video.volume_multiplier}x")
+    if spec.video.reverse and not spec.video.mute_audio:
+        audio_filters.append("areverse")
+
+    if geo_filters or audio_filters or spec.video.mute_audio:
         geo_video = work / "step4b_geometry.mp4"
         clip_info = probe(current_clip, config)
-        cmd = ["-i", str(current_clip), "-vf", ",".join(geo_filters)]
-        if spec.video.reverse and clip_info.has_audio:
-            cmd.extend(["-af", "areverse"])
+        cmd = ["-i", str(current_clip)]
+        if geo_filters:
+            cmd.extend(["-vf", ",".join(geo_filters)])
+        if spec.video.mute_audio:
+            cmd.append("-an")
+            steps_executed.append("mute_audio")
+        elif audio_filters and clip_info.has_audio:
+            cmd.extend(["-af", ",".join(audio_filters)])
         elif clip_info.has_audio:
             cmd.extend(["-c:a", "copy"])
         cmd.extend(["-c:v", "libx264", "-pix_fmt", "yuv420p", str(geo_video)])

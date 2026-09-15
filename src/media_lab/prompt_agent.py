@@ -303,6 +303,104 @@ def interpret_prompt(
             "de la coadă la cap",
         )
     )
+    # 13. Color, Lighting, Blur & Clarity
+    brightness = 0.0
+    if any(k in p_lower for k in ("mai luminos", "lumineaz", "creste luminoz", "crește luminoz")):
+        brightness = 0.08
+    elif any(k in p_lower for k in ("mai intunecat", "mai întunecat", "intunec", "întunec")):
+        brightness = -0.08
+
+    contrast = 1.0
+    if any(k in p_lower for k in ("mai mult contrast", "contrast mai mare", "creste contrast")):
+        contrast = 1.25
+    elif any(
+        k in p_lower for k in ("mai putin contrast", "mai puțin contrast", "contrast mai mic")
+    ):
+        contrast = 0.80
+
+    saturation = 1.0
+    if any(k in p_lower for k in ("culori mai vii", "culori vii", "mai saturat", "vivid")):
+        saturation = 1.35
+    elif any(k in p_lower for k in ("culori pale", "desaturat", "mai putin colorat")):
+        saturation = 0.70
+
+    blur_val = 0.0
+    if any(k in p_lower for k in ("blureaz", "estompeaz", "neclar")) or (
+        "blur" in p_lower and "fundal" not in p_lower and not depth_blur
+    ):
+        blur_val = 4.0
+
+    sharpen = any(k in p_lower for k in ("mai clar", "claritate", "sharpen", "detalii mai clare"))
+
+    # 14. Audio Volume & Muting
+    mute_audio = any(
+        k in p_lower
+        for k in ("fara sunet", "fără sunet", "fara audio", "fără audio", "mute", "mut")
+    )
+    volume_mult = 1.0
+    if any(k in p_lower for k in ("mai tare", "volum mai mare", "creste volum", "crește volum")):
+        volume_mult = 1.5
+    elif any(k in p_lower for k in ("mai incet", "mai încet", "volum mai mic", "scade volum")):
+        volume_mult = 0.6
+
+    # 15. Actionable prompt fallback
+    action_roots = (
+        "fa",
+        "fă",
+        "pune",
+        "adauga",
+        "adaugă",
+        "modifica",
+        "modifică",
+        "schimba",
+        "schimbă",
+        "aplica",
+        "aplică",
+        "executa",
+        "execută",
+        "creeaza",
+        "creează",
+        "regleaza",
+        "reglează",
+        "ajusteaza",
+        "ajustează",
+        "editeaza",
+        "editează",
+        "proceseaza",
+        "procesează",
+        "transforma",
+        "transformă",
+        "lucru",
+        "lucreaza",
+        "lucrează",
+    )
+    has_action_verb = any(re.search(rf"\b{root}", p_lower) for root in action_roots)
+    if has_action_verb and not (
+        aspect != "original"
+        or look
+        or vflip
+        or hflip
+        or rotate_deg
+        or invert_colors
+        or grayscale
+        or reverse_video
+        or brightness != 0.0
+        or contrast != 1.0
+        or saturation != 1.0
+        or blur_val > 0
+        or sharpen
+        or mute_audio
+        or volume_mult != 1.0
+        or clean_speech
+        or silence_trim
+        or punch_zoom
+        or typo_spec
+        or has_progress_bar
+        or retouch
+        or depth_blur
+        or subtitles_enabled
+    ):
+        sharpen = True
 
     video_spec = VideoEditSpec(
         aspect=aspect,
@@ -323,6 +421,13 @@ def interpret_prompt(
         invert_colors=invert_colors,
         grayscale=grayscale,
         reverse=reverse_video,
+        brightness=brightness,
+        contrast=contrast,
+        saturation=saturation,
+        blur=blur_val,
+        sharpen=sharpen,
+        mute_audio=mute_audio,
+        volume_multiplier=volume_mult,
     )
 
     audio_spec = AudioEditSpec(
@@ -343,6 +448,11 @@ def interpret_prompt(
         rotate=rotate_deg,
         invert_colors=invert_colors,
         grayscale=grayscale,
+        brightness=brightness,
+        contrast=contrast,
+        saturation=saturation,
+        blur=blur_val,
+        sharpen=sharpen,
     )
 
     return EditSpec(
@@ -380,6 +490,28 @@ def plan_prompt(prompt: str, source: str | Path, output: str | Path) -> PromptPl
         ops.append("Conversie alb-negru (grayscale)")
     if spec.video.reverse:
         ops.append("Redare inversă (reverse video)")
+    if spec.video.brightness > 0:
+        ops.append("Creștere luminozitate (+luminos)")
+    elif spec.video.brightness < 0:
+        ops.append("Reducere luminozitate (mai întunecat)")
+    if spec.video.contrast > 1.0:
+        ops.append("Amplificare contrast (+contrast)")
+    elif spec.video.contrast < 1.0:
+        ops.append("Reducere contrast (soft)")
+    if spec.video.saturation > 1.0:
+        ops.append("Culori vii și saturate (vivid)")
+    elif spec.video.saturation < 1.0:
+        ops.append("Desaturare culori (pastel)")
+    if spec.video.blur > 0:
+        ops.append("Estompare imagine (efect blur)")
+    if spec.video.sharpen:
+        ops.append("Optimizare claritate și detalii (sharpen)")
+    if spec.video.mute_audio:
+        ops.append("Eliminare pistă audio (mute)")
+    elif spec.video.volume_multiplier > 1.0:
+        ops.append("Creștere volum audio (+50%)")
+    elif spec.video.volume_multiplier < 1.0:
+        ops.append("Reducere volum audio (-40%)")
     if spec.video.smart_reframe:
         ops.append(f"Reîncadrare inteligentă {spec.video.aspect} cu urmărire subiect")
     elif spec.video.aspect != "original":
@@ -699,6 +831,13 @@ def chat_agent(
         or plan.spec.video.invert_colors
         or plan.spec.video.grayscale
         or plan.spec.video.reverse
+        or plan.spec.video.brightness != 0.0
+        or plan.spec.video.contrast != 1.0
+        or plan.spec.video.saturation != 1.0
+        or plan.spec.video.blur > 0
+        or plan.spec.video.sharpen
+        or plan.spec.video.mute_audio
+        or plan.spec.video.volume_multiplier != 1.0
         or plan.spec.photo.retouch
         or plan.spec.photo.depth_blur
         or plan.spec.photo.vflip
@@ -706,6 +845,11 @@ def chat_agent(
         or plan.spec.photo.rotate != 0
         or plan.spec.photo.invert_colors
         or plan.spec.photo.grayscale
+        or plan.spec.photo.brightness != 0.0
+        or plan.spec.photo.contrast != 1.0
+        or plan.spec.photo.saturation != 1.0
+        or plan.spec.photo.blur > 0
+        or plan.spec.photo.sharpen
         or bool(plan.spec.audio.sfx_cues)
         or plan.spec.audio.music_track is not None
     )

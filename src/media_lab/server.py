@@ -224,7 +224,7 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
             self._send_json_response({"error": "Prompt cannot be empty"}, status=400)
             return
 
-        # Resolve input_str if provided, or fallback to first media file in in/
+        # Resolve input_str if provided, or fallback to first media file in in/, then out/
         src_path: Path | None = None
         if input_str:
             p = Path(input_str)
@@ -232,10 +232,28 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
                 (self.config.in_dir.parent / p).resolve() if not p.is_absolute() else p.resolve()
             )
         else:
-            for entry in self.config.in_dir.iterdir():
-                if entry.is_file() and not entry.name.startswith("."):
+            for entry in sorted(self.config.in_dir.iterdir()):
+                if (
+                    entry.is_file()
+                    and not entry.name.startswith(".")
+                    and entry.suffix.lower()
+                    in {".mp4", ".mov", ".m4a", ".wav", ".jpg", ".png", ".jpeg"}
+                ):
                     src_path = entry.resolve()
                     break
+            if src_path is None and self.config.out_dir.exists():
+                for entry in sorted(
+                    self.config.out_dir.iterdir(),
+                    key=lambda x: x.stat().st_mtime,
+                    reverse=True,
+                ):
+                    if (
+                        entry.is_file()
+                        and not entry.name.startswith(".")
+                        and entry.suffix.lower() in {".mp4", ".mov", ".jpg", ".png"}
+                    ):
+                        src_path = entry.resolve()
+                        break
 
         if src_path is not None:
             valid_roots = (
@@ -249,60 +267,72 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
                 )
                 return
 
-        if execute and not src_path:
+        chat_res = chat_agent(prompt_str, src_path, self.config)
+        is_informational = chat_res.intent in ("greeting", "help", "inspect")
+
+        if not execute or is_informational:
+            self._send_json_response(
+                {
+                    "status": "ok",
+                    "reply": chat_res.reply,
+                    "intent": chat_res.intent,
+                    "operations": list(chat_res.plan_operations),
+                    "suggested_prompts": list(chat_res.suggested_prompts),
+                    "executable": chat_res.executable,
+                    "prompt": prompt_str,
+                    "input": str(src_path.name) if src_path else None,
+                }
+            )
+            return
+
+        if not src_path:
             self._send_json_response(
                 {"error": "No media file selected and 'in/' directory is empty"}, status=400
             )
             return
 
-        out_name = f"studio_render_{src_path.stem if src_path else 'output'}.mp4"
-        out_path = self.config.out_dir / out_name
+        stem = src_path.stem
+        if stem.startswith("studio_render_"):
+            stem = stem[len("studio_render_") :]
+        stem = re.sub(r"_v\d+$", "", stem)
+
+        candidate = self.config.out_dir / f"studio_render_{stem}.mp4"
+        counter = 1
+        while candidate.exists() and candidate.resolve() == src_path.resolve():
+            counter += 1
+            candidate = self.config.out_dir / f"studio_render_{stem}_v{counter}.mp4"
+        out_path = candidate
 
         try:
-            if execute:
-                assert src_path is not None
-                result = execute_prompt(
-                    prompt_str,
-                    src_path,
-                    out_path,
-                    self.config,
-                    self.runner,
-                    self.ml_runner,
-                    force=True,
+            result = execute_prompt(
+                prompt_str,
+                src_path,
+                out_path,
+                self.config,
+                self.runner,
+                self.ml_runner,
+                force=True,
+            )
+            skipped_audio = [s for s in result.steps_executed if "skipped" in s]
+            note = ""
+            if skipped_audio:
+                note = (
+                    "\n\n> ℹ️ **Notă:** Fișierul sursă nu are pistă audio. "
+                    "Etapele vocale au fost omise, iar efectele video au fost aplicate."
                 )
-                skipped_audio = [s for s in result.steps_executed if "skipped" in s]
-                note = ""
-                if skipped_audio:
-                    note = (
-                        "\n\n> ℹ️ **Notă:** Fișierul sursă nu are pistă audio. "
-                        "Etapele vocale au fost omise, iar efectele video au fost aplicate."
-                    )
-                self._send_json_response(
-                    {
-                        "status": "ok",
-                        "reply": (
-                            f"🎉 **Randare completată cu succes!**\n\n"
-                            f"Noul fișier a fost salvat în `{result.output.name}` "
-                            f"și a parcurs {len(result.steps_executed)} etape de procesare.{note}"
-                        ),
-                        "output": str(result.output.name),
-                        "steps": list(result.steps_executed),
-                    }
-                )
-            else:
-                chat_res = chat_agent(prompt_str, src_path, self.config)
-                self._send_json_response(
-                    {
-                        "status": "ok",
-                        "reply": chat_res.reply,
-                        "intent": chat_res.intent,
-                        "operations": list(chat_res.plan_operations),
-                        "suggested_prompts": list(chat_res.suggested_prompts),
-                        "executable": chat_res.executable,
-                        "prompt": prompt_str,
-                        "input": str(src_path.name) if src_path else None,
-                    }
-                )
+            self._send_json_response(
+                {
+                    "status": "ok",
+                    "reply": (
+                        f"🎉 **Randare completată cu succes!**\n\n"
+                        f"Am aplicat modificările cerute direct pe `{src_path.name}`.\n"
+                        f"Noul fișier salvat: `{result.output.name}` "
+                        f"({len(result.steps_executed)} etape executate).{note}"
+                    ),
+                    "output": str(result.output.name),
+                    "steps": list(result.steps_executed),
+                }
+            )
         except Exception as exc:
             self._send_json_response({"error": str(exc)}, status=500)
 

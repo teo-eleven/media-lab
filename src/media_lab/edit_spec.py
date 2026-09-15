@@ -75,6 +75,13 @@ class VideoEditSpec:
     invert_colors: bool = False
     grayscale: bool = False
     reverse: bool = False
+    brightness: float = 0.0
+    contrast: float = 1.0
+    saturation: float = 1.0
+    blur: float = 0.0
+    sharpen: bool = False
+    mute_audio: bool = False
+    volume_multiplier: float = 1.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +97,11 @@ class PhotoEditSpec:
     rotate: int = 0
     invert_colors: bool = False
     grayscale: bool = False
+    brightness: float = 0.0
+    contrast: float = 1.0
+    saturation: float = 1.0
+    blur: float = 0.0
+    sharpen: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,6 +217,13 @@ def parse_edit_spec(source: str | Path | dict[str, Any]) -> EditSpec:
         invert_colors=bool(video_dict.get("invert_colors", False)),
         grayscale=bool(video_dict.get("grayscale", False)),
         reverse=bool(video_dict.get("reverse", False)),
+        brightness=float(video_dict.get("brightness", 0.0)),
+        contrast=float(video_dict.get("contrast", 1.0)),
+        saturation=float(video_dict.get("saturation", 1.0)),
+        blur=float(video_dict.get("blur", 0.0)),
+        sharpen=bool(video_dict.get("sharpen", False)),
+        mute_audio=bool(video_dict.get("mute_audio", False)),
+        volume_multiplier=float(video_dict.get("volume_multiplier", 1.0)),
     )
 
     audio_dict = raw.get("audio", {})
@@ -251,6 +270,11 @@ def parse_edit_spec(source: str | Path | dict[str, Any]) -> EditSpec:
         rotate=int(photo_dict.get("rotate", 0)),
         invert_colors=bool(photo_dict.get("invert_colors", False)),
         grayscale=bool(photo_dict.get("grayscale", False)),
+        brightness=float(photo_dict.get("brightness", 0.0)),
+        contrast=float(photo_dict.get("contrast", 1.0)),
+        saturation=float(photo_dict.get("saturation", 1.0)),
+        blur=float(photo_dict.get("blur", 0.0)),
+        sharpen=bool(photo_dict.get("sharpen", False)),
     )
 
     return EditSpec(
