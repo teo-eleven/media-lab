@@ -85,6 +85,7 @@ class VideoEditSpec:
     upscale: int = 0
     narrator_text: str | None = None
     narrator_voice: str | None = None
+    stabilize: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -231,6 +232,7 @@ def parse_edit_spec(source: str | Path | dict[str, Any]) -> EditSpec:
         upscale=int(video_dict.get("upscale", 0)),
         narrator_text=video_dict.get("narrator_text"),
         narrator_voice=video_dict.get("narrator_voice"),
+        stabilize=bool(video_dict.get("stabilize", False)),
     )
 
     audio_dict = raw.get("audio", {})
