@@ -592,58 +592,61 @@ Completarea ultimelor superputeri de studio (asamblare multi-clip cu tranziții 
 
 ---
 
-# FAZA 6 — Hollywood VFX, Enterprise Marketing & Agenți Autonomi
+# FAZA 6 — Hollywood VFX, Enterprise Marketing & Agenți Autonomi — GATA (cb1edcd)
 
 Integrarea celor mai bune practici din Hollywood (DaVinci Resolve Neural Engine, Frame.io v4 QC, Nuke) și Marketing Enterprise (Opus Clip, Descript, Captions.ai, Creatopy) într-o suită completă de producție autonomă video/audio/foto.
 
 ## Etape de implementare
 
-### Etapa 6.1 — Subtitrări Kinetice & Auto-Emojis (Captions.ai style)
+### Etapa 6.1 — Subtitrări Kinetice & Auto-Emojis (Captions.ai style) — GATA (47cb56c)
 - Generare tag-uri ASS de animație elastică cuvânt-cu-cuvânt (`\t(\fscx...\fscy...)`).
 - Dicționar semantic de emojis (română/engleză) cu inserare automată la cuvinte cheie.
 - Ancorare automată în Social Media Safe Zone (offset față de UI TikTok/Reels).
-- Teste: `tests/test_kinetic_subtitles.py`.
+- Teste: `tests/test_kinetic_subtitles.py` (5/5 trecute, acoperire >90%).
 - Livrabil: `media-lab subtitles in/clip.mp4 -o out/subbed.mp4 --kinetic --emojis --burn`.
 
 ---
 
-### Etapa 6.2 — Brand Kit & Watermark Engine (Creatopy / Enterprise Marketing)
+### Etapa 6.2 — Brand Kit & Watermark Engine (Creatopy / Enterprise Marketing) — GATA (6a8a380)
 - `src/media_lab/recipes/brand_kit.py`: Plasare logo transparent, scalare procentuală din canvas, opacitate reglabilă, padding în colțurile ecranului.
 - Bounding box overlay pentru inspecție de zonă sigură (Safe Zone QC).
-- Teste: `tests/test_brand_kit.py`.
+- Teste: `tests/test_brand_kit.py` (5/5 trecute, acoperire 95%).
 - Livrabil: `media-lab brand in/clip.mp4 --logo in/logo.png -o out/branded.mp4`.
 
 ---
 
-### Etapa 6.3 — Auto-Hook & Viral Energy Slicing (Opus Clip style)
+### Etapa 6.3 — Auto-Hook & Viral Energy Slicing (Opus Clip style) — GATA (c671982)
 - `src/media_lab/recipes/auto_hook.py`: Calcul de energie acustică RMS și detecție spike-uri pe ferestre glisante.
 - Analiză ritm vorbire și decupare automată a celor mai captivante 30–60s cu crossfade audio.
-- Teste: `tests/test_auto_hook.py`.
+- Teste: `tests/test_auto_hook.py` (5/5 trecute, acoperire 96%).
 - Livrabil: `media-lab auto-hook in/podcast.mp4 -o out/hook_clip.mp4`.
 
 ---
 
-### Etapa 6.4 — Render Doctor Auto-Correction & Multimodal Audit (Frame.io QC)
+### Etapa 6.4 — Render Doctor Auto-Correction & Multimodal Audit (Frame.io QC) — GATA (33f7b6e)
 - Extindere `render_doctor.py` cu flag `--auto-fix`: corectare automată rezoluții impare, niveluri de negru zdrobite și clipping audio.
 - Export raport JSON structurat pentru pipeline-uri CI/CD.
-- Teste: `tests/test_render_doctor.py`.
+- Teste: `tests/test_render_doctor.py` (6/6 trecute, acoperire 96%).
 - Livrabil: `media-lab doctor-render out/render.mp4 --auto-fix -o out/fixed.mp4`.
 
 ---
 
-### Etapa 6.5 — Footage Scout & Local Asset Library (B-Roll & Foley)
+### Etapa 6.5 — Footage Scout & Local Asset Library (B-Roll & Foley) — GATA (1269248)
 - `src/media_lab/recipes/footage_scout.py`: Indexare și clasificare automată de cadre B-roll, sound effects (whoosh, pop, ding) și background plates.
 - Căutare rapidă după categorie, rezoluție și durată.
-- Teste: `tests/test_footage_scout.py`.
+- Teste: `tests/test_footage_scout.py` (5/5 trecute, acoperire 94%).
 - Livrabil: `media-lab scout --type sfx --name whoosh`.
 
 ---
 
-### Etapa 6.6 — Integrarea în Web Studio UI, Prompt Agent & Sincronizare Git
-- Conectare comenzi noi în `prompt_agent.py` și `edit_spec.py`.
-- Butoane rapide în Web UI (`index.html`): "⚡ One-Click Reelify", "🌐 Omni Campaign Export", "🩺 Run Doctor Audit".
-- Verificare `make check` complet (100% verde) și push pe ramura `dev`.
-- Livrabil: Interfață complet funcțională la `http://localhost:8765`.
+### Etapa 6.6 — Integrarea în Web Studio UI, Prompt Agent & Sincronizare Git — GATA (cb1edcd)
+- Conectare comenzi noi în `prompt_agent.py` și `edit_spec.py` (`brand_logo`, `auto_hook`, `subtitles.kinetic`, `subtitles.emojis`).
+- 6 unelte noi în MCP Server (`reelify_video`, `omni_export_campaign`, `diagnose_and_repair_render`, `apply_brand_watermark`, `extract_viral_hook`, `scout_media_library`).
+- Butoane rapide în Web UI (`index.html`): "⚡ One-Click Reelify", "🌐 Omni Campaign Export", "🩺 Run Doctor Audit", "🔍 Scout Media Library".
+- Endpoints API noi în `server.py`: `/api/reelify`, `/api/omni-export`, `/api/doctor`, `/api/scout`.
+- Verificare completă: 370 de teste trecute (0 failures, acoperire totală 80%, 100% curat la ruff și mypy strict).
+- Sincronizare git pe ramura `dev`.
+
 
 
 

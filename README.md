@@ -47,6 +47,12 @@ probed and checked against what was asked for.
 | `media-lab beat-sync`    | Musical audio rhythm & transient onset analysis (BPM + beat timestamps)|
 | `media-lab narrate`      | Local offline TTS voiceover (macOS Romanian & English) + timeline mux  |
 | `media-lab studio`       | Local Web Studio UI: interactive dark-mode chat + HTML5 media player   |
+| `media-lab reelify`      | One-click viral short reformatting (9:16, voice cleanup, subs, hook)   |
+| `media-lab omni-export`  | Omnichannel campaign multi-export (9:16 vertical, 16:9 wide, 1:1 square)|
+| `media-lab doctor-render`| Frame.io QC audit & automated repair (even dims, black crush, clipping)|
+| `media-lab brand`        | Corporate brand kit: watermark logo overlay with opacity & safe zones  |
+| `media-lab auto-hook`    | Acoustic energy spike analyzer & automatic viral hook slicing          |
+| `media-lab scout`        | Local media asset cataloger & fast search (B-roll, SFX, plates)        |
 | `media-lab prompt`       | Autonomous agent: prompt-to-edit in natural language (RO & EN)         |
 | `media-lab mcp`          | Model Context Protocol (MCP) server over stdio for AI assistant pairing|
 | `media-lab pipeline`     | Run the whole edit in one pass                                         |
@@ -161,6 +167,20 @@ uv run media-lab progress-bar in/reel.mp4 -o out/bar.mp4 --color yellow --positi
 uv run media-lab beat-sync in/track.mp3 --json
 uv run media-lab narrate "Bine ați venit la un nou episod!" -o out/intro_voice.mp4 --video in/clip.mp4
 uv run media-lab studio --port 8765
+
+# 6. Hollywood VFX & Enterprise Marketing Suite (Phase 6)
+# One-click viral short generation with auto-hook slicing
+uv run media-lab auto-hook in/podcast.mp4 -o out/hook_teaser.mp4 --duration 30
+uv run media-lab reelify in/interview.mp4 -o out/viral_short.mp4 --preset viral --brand-logo in/logo.png
+# Omnichannel multi-aspect export (TikTok 9:16, YouTube 16:9, Insta 1:1)
+uv run media-lab omni-export in/ad.mp4 -o out/campaign/ --name launch
+# Corporate brand kit watermarking with safe-zone compliance
+uv run media-lab brand in/clip.mp4 --logo in/brand.png -o out/branded.mp4 --pos top-right --opacity 0.85
+# Frame.io-grade QC inspection and automated video repair
+uv run media-lab doctor-render out/master.mp4 --auto-fix -o out/master_fixed.mp4 --json
+# Local asset scout (B-roll, foley sound effects, background plates)
+uv run media-lab scout --type sfx --category whoosh
+uv run media-lab scout --type video --vertical
 ```
 
 The pipeline runs: cutout, backdrop, look, restore the voice the compositor
