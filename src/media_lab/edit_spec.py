@@ -176,9 +176,20 @@ def parse_edit_spec(source: str | Path | dict[str, Any]) -> EditSpec:
     if isinstance(sub_dict, bool):
         sub_spec = SubtitleEditSpec(enabled=sub_dict)
     elif isinstance(sub_dict, dict):
-        sub_style = str(sub_dict.get("style", "tiktok"))
-        if sub_style not in STYLE_CHOICES:
-            raise ValidationError(f"unsupported subtitle style in edit spec: {sub_style}")
+        raw_style = str(sub_dict.get("style", "tiktok")).lower().strip()
+        if raw_style in ("yellow", "boxed_yellow", "box_yellow", "yellow_box"):
+            sub_style = "boxed_yellow"
+        elif raw_style in ("box", "boxed"):
+            sub_style = "box"
+        elif raw_style in ("clean", "simple"):
+            sub_style = "clean"
+        elif raw_style in ("tiktok", "viral", "bold"):
+            sub_style = "tiktok"
+        elif raw_style in STYLE_CHOICES:
+            sub_style = raw_style
+        else:
+            raise ValidationError(f"unsupported subtitle style in edit spec: {raw_style}")
+
         sub_spec = SubtitleEditSpec(
             enabled=bool(sub_dict.get("enabled", True)),
             style=sub_style,

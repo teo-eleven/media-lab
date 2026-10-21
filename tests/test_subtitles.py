@@ -336,3 +336,27 @@ def test_cli_subtitles(
     captured = capsys.readouterr().out
     assert "subtitles generated" in captured
     assert "cli_subs.ass" in captured
+
+
+def test_generate_ass_extended_styles() -> None:
+    segments = [
+        SubtitleSegment(
+            id=1,
+            start=0.0,
+            end=1.5,
+            text="Test subtitle",
+            words=(
+                WordToken("Test", 0.0, 0.7),
+                WordToken("subtitle", 0.8, 1.5),
+            ),
+        )
+    ]
+    ass_boxed = generate_ass(segments, style="boxed_yellow")
+    assert "&H0000FFFF" in ass_boxed  # Yellow
+    assert "BorderStyle" in ass_boxed
+
+    ass_cinematic = generate_ass(segments, style="cinematic")
+    assert "&H00E0E0E0" in ass_cinematic
+
+    ass_minimal = generate_ass(segments, style="minimal")
+    assert "&H00FFFFFF" in ass_minimal

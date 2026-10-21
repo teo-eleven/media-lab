@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-STYLE_CHOICES = ("tiktok", "clean", "box")
+STYLE_CHOICES = ("tiktok", "clean", "box", "boxed_yellow", "cinematic", "minimal")
 
 EMOJI_KEYWORDS: dict[str, str] = {
     "bani": "💰",
@@ -148,12 +148,33 @@ def _build_ass_styles(style: str, width: int, height: int) -> str:
             f"Style: Default,Arial Black,{font_size},&H0000FFFF,&H000000FF,&H00000000,&H00000000,"
             f"-1,0,0,0,100,100,0,0,1,4,1.5,5,40,40,{margin_v},1"
         )
+    if style == "boxed_yellow":
+        font_size = int(round(44 * scale_factor))
+        margin_v = int(round(height * 0.38))
+        return (
+            f"Style: Default,Arial Black,{font_size},&H0000FFFF,&H000000FF,&H00000000,&HA0000000,"
+            f"-1,0,0,0,100,100,0,0,3,0,0,2,40,40,{margin_v},1"
+        )
     if style == "box":
         font_size = int(round(38 * scale_factor))
         margin_v = int(round(80 * scale_factor))
         return (
             f"Style: Default,Helvetica,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H90000000,"
             f"0,0,0,0,100,100,0,0,3,0,0,2,40,40,{margin_v},1"
+        )
+    if style == "cinematic":
+        font_size = int(round(34 * scale_factor))
+        margin_v = int(round(60 * scale_factor))
+        return (
+            f"Style: Default,Helvetica,{font_size},&H00E0E0E0,&H000000FF,&H00000000,&H80000000,"
+            f"0,0,0,0,100,100,0,0,1,1.5,1.0,2,40,40,{margin_v},1"
+        )
+    if style == "minimal":
+        font_size = int(round(32 * scale_factor))
+        margin_v = int(round(50 * scale_factor))
+        return (
+            f"Style: Default,Helvetica,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,"
+            f"0,0,0,0,100,100,0,0,1,1,0,2,40,40,{margin_v},1"
         )
     # Default 'clean'
     font_size = int(round(38 * scale_factor))
@@ -206,8 +227,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if emojis:
             raw_text = apply_auto_emojis(raw_text)
 
-        # If tiktok style and word timestamps are available, chunk into 3-5 words
-        if style == "tiktok" and seg.words:
+        # If tiktok or boxed_yellow style and word timestamps are available, chunk into 3-5 words
+        if style in ("tiktok", "boxed_yellow") and seg.words:
             words = list(seg.words)
             chunk_size = 4
             for i in range(0, len(words), chunk_size):
@@ -226,7 +247,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             start_str = format_timestamp_ass(seg.start)
             end_str = format_timestamp_ass(seg.end)
             clean_text = raw_text.replace("\n", "\\N")
-            if style == "tiktok":
+            if style in ("tiktok", "boxed_yellow"):
                 clean_text = clean_text.upper()
             dialogues.append(
                 f"Dialogue: 0,{start_str},{end_str},Default,,0,0,0,,{kinetic_prefix}{clean_text}"
