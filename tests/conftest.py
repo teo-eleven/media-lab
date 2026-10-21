@@ -43,6 +43,8 @@ def config(tmp_path: Path, bin_dir: Path) -> Config:
         work_dir=tmp_path / "work",
         kino_timeout_s=300,
         hyperframes_command=REPO_ROOT / "node_modules" / ".bin" / "hyperframes",
+        rvm_repo=tmp_path / "tools" / "RobustVideoMatting",
+        weights_dir=tmp_path / "weights",
     )
 
 

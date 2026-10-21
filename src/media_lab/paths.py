@@ -45,6 +45,12 @@ def ensure_writable_output(path: Path | str, config: Config, *, force: bool = Fa
         raise PathSafetyError(
             f"refusing to write inside the source directory {config.in_dir}: {resolved}"
         )
+    for forbidden in (config.root / "src", config.root / ".git", config.root / "tests"):
+        if _is_within(resolved, forbidden):
+            raise PathSafetyError(
+                f"refusing to overwrite project files under {forbidden}: {resolved}"
+            )
+
     allowed_roots = (config.root, config.out_dir, config.work_dir)
     if not any(_is_within(resolved, root) for root in allowed_roots):
         raise PathSafetyError(
@@ -57,6 +63,51 @@ def ensure_writable_output(path: Path | str, config: Config, *, force: bool = Fa
         raise PathSafetyError(f"output already exists (pass force to overwrite): {resolved}")
 
     resolved.parent.mkdir(parents=True, exist_ok=True)
+    return resolved
+
+
+def ensure_readable_directory(path: Path | str) -> Path:
+    """Resolve an input directory, verifying it exists and is a directory."""
+    resolved = Path(path).expanduser().resolve()
+    if not resolved.exists():
+        raise PathSafetyError(f"directory does not exist: {resolved}")
+    if not resolved.is_dir():
+        raise PathSafetyError(f"expected a directory, got a file: {resolved}")
+    return resolved
+
+
+def ensure_writable_directory(path: Path | str, config: Config, *, force: bool = False) -> Path:
+    """Resolve an output directory, refusing anything that would destroy sources or paths."""
+    resolved = Path(path).expanduser()
+    if not resolved.is_absolute():
+        resolved = (config.root / resolved).resolve()
+    else:
+        resolved = resolved.resolve()
+
+    if _is_within(resolved, config.in_dir):
+        raise PathSafetyError(
+            f"refusing to write inside the source directory {config.in_dir}: {resolved}"
+        )
+    for forbidden in (config.root / "src", config.root / ".git", config.root / "tests"):
+        if _is_within(resolved, forbidden):
+            raise PathSafetyError(
+                f"refusing to write inside project files under {forbidden}: {resolved}"
+            )
+
+    allowed_roots = (config.root, config.out_dir, config.work_dir)
+    if not any(_is_within(resolved, root) for root in allowed_roots):
+        raise PathSafetyError(
+            f"refusing to write outside the project: {resolved}. "
+            f"Renders belong under {config.out_dir} or {config.work_dir}."
+        )
+    if resolved.is_file():
+        raise PathSafetyError(f"output path is a file, expected a directory: {resolved}")
+    if resolved.exists() and any(resolved.iterdir()) and not force:
+        raise PathSafetyError(
+            f"output directory is not empty (pass force to overwrite): {resolved}"
+        )
+
+    resolved.mkdir(parents=True, exist_ok=True)
     return resolved
 
 

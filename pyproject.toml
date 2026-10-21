@@ -5,6 +5,7 @@ description = "Local video/photo editing pipeline for short social clips, built 
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "kinocut[hyperframes,image,transcribe,stems,upscale]==1.15.1",
+    "pyyaml>=6.0",
 ]
 
 [project.scripts]
@@ -16,6 +17,7 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.6",
     "mypy>=1.11",
+    "types-pyyaml>=6.0",
 ]
 
 [build-system]
@@ -28,6 +30,10 @@ packages = ["src/media_lab"]
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
+# docs/video-agent/pipeline/ holds captured reference scripts from the punto
+# edit (v1-v23), kept verbatim as a record. They are not part of the linted
+# package; mypy already scopes to src+tests for the same reason.
+extend-exclude = ["docs/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RET"]
@@ -36,7 +42,14 @@ select = ["E", "F", "I", "B", "UP", "SIM", "RET"]
 python_version = "3.12"
 strict = true
 files = ["src", "tests"]
+# ML infer scripts run as subprocesses in an environment with torch + heavy
+# dependencies on sys.path; they are not part of the typed library surface.
+exclude = ["src/media_lab/ml/.*_infer\\.py$"]
+
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --cov=media_lab --cov-report=term-missing"
+addopts = "-q --cov=media_lab --cov-report=term-missing -m 'not slow'"
+markers = [
+    "slow: real ML runs (RVM). Deselected by default; run with -m slow.",
+]

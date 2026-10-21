@@ -31,6 +31,8 @@ class MediaInfo:
     has_video: bool
     has_audio: bool
     has_alpha: bool
+    codec_video: str = ""
+    codec_audio: str = ""
 
     @property
     def aspect_ratio(self) -> float:
@@ -105,6 +107,8 @@ def probe(path: Path | str, config: Config) -> MediaInfo:
     video = next((s for s in streams if s.get("codec_type") == "video"), None)
     audio = next((s for s in streams if s.get("codec_type") == "audio"), None)
     pixel_format = str(video.get("pix_fmt", "")) if video else ""
+    codec_video = str(video.get("codec_name", "")) if video else ""
+    codec_audio = str(audio.get("codec_name", "")) if audio else ""
     tags = video.get("tags", {}) if video else {}
     tagged_alpha = _has_alpha_mode_tag(tags)
 
@@ -120,4 +124,6 @@ def probe(path: Path | str, config: Config) -> MediaInfo:
         has_alpha=(
             any(marker in pixel_format for marker in ALPHA_PIXEL_FORMAT_MARKERS) or tagged_alpha
         ),
+        codec_video=codec_video,
+        codec_audio=codec_audio,
     )

@@ -3,6 +3,7 @@
 setup:
 	uv sync --group dev
 	npm install --no-audit --no-fund
+	bash scripts/patch-basicsr-shim.sh
 
 test:
 	uv run pytest

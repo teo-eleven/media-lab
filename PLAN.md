@@ -309,3 +309,286 @@ planului până zici tu:
 10. **Verificare nouă: `measure_alpha_spread`** (Pas 2). Prezenta canalului
     alpha nu garanta ca exista un matte. Se masoara acum ca alpha chiar
     variaza; un matte uniform ridica VerificationError.
+
+---
+
+# FAZA 2 — Optimizare & Video-Agent Toolkit (A + B)
+
+Extinderea pachetului `media-lab` cu uneltele native de compoziție din roadmap-ul Phase 2
+și înlocuirea scripturilor legacy din `docs/video-agent/pipeline/` cu rețete native,
+robuste, testate și integrate în CLI.
+
+## Ce NU intră în scop (explicit)
+
+- Servicii externe cloud sau API-uri terțe (fără scraping Pexels/Pixabay ce necesită conexiuni externe; fără backend CUDA IC-Light la distanță).
+- Modificarea contractului sau comportamentului uneltelor existente care trec testele (`matte`, `compose`, `proxy`, `filter`, `audio-bed`, `short`).
+- Orice operație distructivă asupra surselor din `in/`.
+
+---
+
+## Pași de implementare
+
+### Pasul 1 — `upscale` (Real-ESRGAN native recipe + CLI) — GATA (b1304a0)
+- **Ce se adaugă**:
+  - `src/media_lab/ml/realesrgan_infer.py`: driver ML dedicat rulat ca subprocess prin `ml_runner` (pentru menținerea graniței de proces și izolarea memoriei); suportă `--scale` (2, 4), `tile`, `tile_pad`, device auto MPS/CPU; scalează canalele RGB cu RealESRGAN și canalul alpha cu Lanczos; procesează secvențe PNG.
+  - `src/media_lab/recipes/upscale.py`: rețetă tipizată `upscale_frames` / `upscale` cu suport pentru secvențe PNG sau ProRes 4444 `.mov`, verificare căi, protecție `--force`.
+  - `src/media_lab/cli.py`: adăugare subcomandă `media-lab upscale`.
+- **Fișiere atinse**:
+  - `src/media_lab/ml/realesrgan_infer.py` (nou)
+  - `src/media_lab/recipes/upscale.py` (nou)
+  - `src/media_lab/cli.py`
+  - `tests/test_upscale.py` (nou)
+- **Teste**: `tests/test_upscale.py` (happy path mockat prin `MlRunner`, validare scalare dimensiuni 2x, păstrare integritate canal alpha, cazuri de eroare: fișier inexistent, mod invalid).
+- **Depinde de**: `src/media_lab/ml_runner.py` (deja existent).
+
+---
+
+### Pasul 2 — `subject-ground` (Foot pin, zoom-normalisation, contact shadow, canvas placement) — GATA (1210686)
+- **Ce se adaugă**:
+  - `src/media_lab/grounding.py`: modul pur de calcul geometric și grafic:
+    - Detecție puncte de contact picioare (pe baza pragului de alpha, centroid X al benzii inferioare).
+    - Median smoothing pe Y pentru a preveni flicker-ul și plutirea siluetei în mers (foot-lock).
+    - Zoom-normalisation: scalare subtilă per frame raportată la înălțimea mediană a siluetei (elimină variația de distanță a camerei).
+    - Contact shadow multi-layer: ambient occlusion dens la baza tălpii + elipsă cu falloff difuz orientată după vectorul solar (`sun_dir`).
+  - `src/media_lab/recipes/subject_ground.py`: rețetă `ground_subject` care preia cadrele decupate, aplică grounding-ul și le plasează pe canvas-ul cerut (ex: 2160x3840) gata pentru `compose-spec`.
+  - `src/media_lab/cli.py`: adăugare subcomandă `media-lab ground`.
+- **Fișiere atinse**:
+  - `src/media_lab/grounding.py` (nou)
+  - `src/media_lab/recipes/subject_ground.py` (nou)
+  - `src/media_lab/cli.py`
+  - `tests/test_subject_ground.py` (nou)
+- **Teste**: `tests/test_subject_ground.py` (calcul punct de sprijin pe siluete sintetice, generare corectă a celor 3 layere de umbră, plasare pe canvas cu offset dx/ground_y, tratare frame complet transparent).
+- **Depinde de**: numpy, PIL.
+
+---
+
+### Pasul 3 — `scale-from-plate` (Calcul scară și poziție sol din referință) — GATA (6716243)
+- **Ce se adaugă**:
+  - `src/media_lab/scale_plate.py`: funcții pure pentru calculul scării subiectului și al liniei de sol pe baza unei persoane de referință din background plate sau a unei înălțimi țintă în pixeli la coordonata Y dată.
+  - `src/media_lab/recipes/scale_plate.py` + CLI `media-lab scale-plate`: calculează parametrii optimi de scalare și poziționare pentru `ground_subject`.
+- **Fișiere atinse**:
+  - `src/media_lab/scale_plate.py` (nou)
+  - `src/media_lab/recipes/scale_plate.py` (nou)
+  - `src/media_lab/cli.py`
+  - `tests/test_scale_plate.py` (nou)
+- **Teste**: `tests/test_scale_plate.py` (formule matematice de scalare raportate la plate, validare praguri, erori pe dimensiuni nule sau negative).
+- **Depinde de**: Pasul 2.
+
+---
+
+### Pasul 4 — `colour-match` (Transfer statistic Lab + relight scenic directional/bounce) — GATA (26e7e4c)
+- **Ce se adaugă**:
+  - `src/media_lab/colour_transfer.py`: modul pur de procesare coloristică:
+    - Transfer statistic Reinhard în spațiul Lab (aliniere medie și deviație standard între regiunea de fundal și subiect).
+    - Gradient direcțional key/fill (`key_dir`, `key_amt`).
+    - Ambient color tint + ajustare gamma.
+    - Ground bounce: nuanțare și lift pe partea inferioară a corpului (~ultimii 35%) pentru integrarea reflexiei solului.
+    - Ajustări saturație și contrast menținând neafectat canalul alpha.
+  - `src/media_lab/recipes/colour_match.py`: rețetă `colour_match` cu suport pentru procesare batch de cadre RGBA.
+  - `src/media_lab/cli.py`: adăugare subcomandă `media-lab colour-match`.
+- **Fișiere atinse**:
+  - `src/media_lab/colour_transfer.py` (nou)
+  - `src/media_lab/recipes/colour_match.py` (nou)
+  - `src/media_lab/cli.py`
+  - `tests/test_colour_match.py` (nou)
+- **Teste**: `tests/test_colour_match.py` (integritate canal alpha, corectitudine transfer Lab pe culori sintetice, comportament la saturație 0, cazuri de eroare pe imagini corupte sau fără canal alpha).
+- **Depinde de**: numpy, PIL.
+
+---
+
+### Pasul 5 — Refactorizarea runner-ului `punto` (eliminare scripturi legacy & staging improvizat) — GATA (3132c0b)
+- **Ce se adaugă**:
+  - Modificare `src/media_lab/recipes/punto_v23.py`:
+    - Înlocuirea apelurilor către `docs/video-agent/pipeline/upscale_realesrgan.py` cu `recipes.upscale`.
+    - Înlocuirea apelurilor către `docs/video-agent/pipeline/place_composite.py` cu `recipes.colour_match` urmat de `recipes.subject_ground`.
+    - Eliminarea mutării manuale a folderului `work/punto-edit/isnet/up/ -> work/punto-edit/rvm_up/`.
+    - Păstrarea opțiunii `--proxy` (fast-path).
+- **Fișiere atinse**:
+  - `src/media_lab/recipes/punto_v23.py`
+  - `tests/test_punto_v23.py`
+- **Teste**: adaptarea `tests/test_punto_v23.py` pentru a valida noul flux curat și complet integrat.
+- **Depinde de**: Pașii 1, 2, 4.
+
+---
+
+### Pasul 6 — Verificare completă, documentație și sincronizare — GATA
+- **Ce se adaugă**:
+  - Actualizare `README.md` (noile comenzi CLI, exemple de utilizare).
+  - Actualizare `DECISIONS.md` cu deciziile luate.
+  - Arhivarea notată a scripturilor din `docs/video-agent/pipeline/` ca superseded de noile comenzi native.
+  - Rularea tuturor verificărilor de calitate: `make lint` (`ruff`), `make typecheck` (`mypy` strict), `make test` (toată suita `pytest` verde cu coverage ≥ 80%).
+- **Fișiere atinse**:
+  - `README.md`
+  - `DECISIONS.md`
+  - `PLAN.md` (bifare pași finalizați)
+  - `docs/video-agent/README.md`
+- **Depinde de**: Pașii 1–5.
+
+---
+
+# FAZA 3 — Extensii Audio/Video/Foto & Agent Prompt-to-Edit
+
+Completarea extensiilor native rămase din planul inițial (E1 subtitles, E2 stems, E4 photo)
+și construirea nucleului pentru agentul autonom media-lab (inspecție media profundă și
+orchestrare declarativă prompt-to-edit).
+
+## Pași de implementare
+
+### Pasul 1 — `stems` (Demucs audio separation & speech cleaning) — GATA
+- **Ce se adaugă**:
+  - `src/media_lab/ml/demucs_infer.py`: driver ML dedicat rulat prin `ml_runner` ca subprocess; suportă `--model` (`htdemucs`), `--two-stems` (`vocals`), selecție device auto/mps/cpu; extrage pista audio dacă inputul e video.
+  - `src/media_lab/recipes/stems.py`: rețetă tipizată `separate_stems`:
+    - separare piese în directorul țintă (`vocals.wav`, `no_vocals.wav`, sau 4-stems: `drums`, `bass`, `other`, `vocals`).
+    - mod `--clean-speech`: înlocuiește pista audio a unui fișier video cu vocea izolată curățată de zgomot.
+  - `src/media_lab/cli.py`: adăugare subcomandă `media-lab stems`.
+  - `tests/test_stems.py`: teste unitare și de integrare cu mock-uri de subprocess, verificări de formate, force guard și erori.
+- **Depinde de**: `demucs`, `ml_runner`.
+
+---
+
+### Pasul 2 — `subtitles` (Whisper speech-to-text + social subtitle styling/burning) — GATA
+- **Ce se adaugă**:
+  - `src/media_lab/ml/whisper_infer.py`: driver ML pentru Whisper local (`openai-whisper`), exportă segmente JSON cu timestamp-uri și cuvinte.
+  - `src/media_lab/subtitles.py`: generator avansat de fișiere ASS / SRT cu preseturi social media:
+    - `tiktok`: text centrat, bold, galben/alb, contur negru puternic, cuvânt activ evidențiat.
+    - `clean`: text minimalist jos, alb cu umbră discretă.
+    - `box`: fundal translucid rotunjit sub text pentru lizibilitate maximă.
+  - `src/media_lab/recipes/subtitles.py`: rețetă `generate_subtitles` care produce fișierul `.ass`/`.srt` sau îl arde direct pe video prin `ffmpeg -vf ass=...`.
+  - `src/media_lab/cli.py`: adăugare subcomandă `media-lab subtitles`.
+  - `tests/test_subtitles.py`: teste generare ASS, formatare culori/timpi, ardere pe clip sintetic.
+- **Depinde de**: `whisper`, `ffmpeg` (libass).
+
+---
+
+### Pasul 3 — `photo` (Editare foto, carusele & schimbare fundal) — GATA
+- **Ce se adaugă**:
+  - `src/media_lab/recipes/photo.py`: rețetă tipizată pentru editare de imagini statice:
+    - decupare subiect (via `cutout` u2net).
+    - înlocuire fundal cu scalare inteligentă (`cover` / `contain`) și ancorare la sol.
+    - transfer de culoare Reinhard Lab pentru integrare lumină fundal.
+    - preseturi de aspect ratio social media: `1:1` (feed Instagram), `4:5` (portret IG), `9:16` (Story), `16:9` (banner/YouTube).
+    - filtru / grading + claritate (unsharp mask).
+    - mod `--batch` pentru procesare foldere întregi de fotografii.
+  - `src/media_lab/cli.py`: adăugare subcomandă `media-lab photo`.
+  - `tests/test_photo.py`: teste pentru decupare, reîncadrare, transfer culoare, loturi de poze.
+- **Depinde de**: PIL, numpy, `cutout`, `colour_transfer`.
+
+---
+
+### Pasul 4 — `inspect` & `edit` (Ochii agentului & Orchestratorul declarativ) — GATA
+- **Ce se adaugă**:
+  - `src/media_lab/inspect.py`: analizor profund care returnează JSON structurat despre fișiere audio/video/foto:
+    - Video: durată, rezoluție, fps, bitrate, luminozitate medie, paletă culori dominante (RGB/Lab).
+    - Audio: LUFS integrat, RMS peak, detectare vorbire / silențiu, raport semnal/zgomot estimat.
+    - Persoană: detectare prezență siluetă umană, bounding box, raport înălțime/canvas.
+  - `src/media_lab/edit_spec.py` + `src/media_lab/recipes/edit.py`: executor declarativ `edit-spec`:
+    - Permite unui agent AI să definească într-un fișier YAML sau prin flag-uri operațiunile dorite (ex: curăță audio, reîncadrează la 9:16, aplică look cald, adaugă muzică de fundal ducked, generează subtitrări TikTok) și execută totul optimizat într-o singură trecere.
+  - `src/media_lab/cli.py`: subcomenzi `media-lab inspect` și `media-lab edit`.
+  - `tests/test_inspect.py` și `tests/test_edit.py`.
+- **Depinde de**: toate rețetele anterioare.
+
+---
+
+### Pasul 5 — Code Review amplu, întărire securitate & documentație finală — GATA
+- **Ce se adaugă**:
+  - Revizuire a întregului codebase cu agenți specializați.
+  - Verificare riguroasă: `make check` (zero linter warnings, zero mypy errors, 100% teste verzi cu coverage ≥ 80%).
+  - Actualizare completă `README.md`, `DECISIONS.md`, `PLAN.md`.
+  - Push pe noul branch git.
+
+---
+
+# FAZA 4 — Agentul Autonom Omnichannel (Sunet Studio, Video Pacing, Foto & MCP)
+
+Transformarea `media-lab` într-un agent complet capabil să execute orice editare foto, video și audio din prompturi în limbaj natural sau prin protocolul deschis MCP (Model Context Protocol).
+
+## Pași de implementare
+
+### Pasul 1 — Zona 1: Sunet & Audio Studio (`audio_enhance`, `silence_trim`, `sfx`) — GATA
+- **Ce se face**:
+  - `src/media_lab/recipes/audio_enhance.py`: Mastering vocal de studio complet via ffmpeg filtergraph (high-pass 80Hz, EQ parametric pentru prezență și căldură vocală, de-esser sibilanțe 6.5kHz, compresor dinamic broadcast, noise gate/denoise).
+  - `src/media_lab/recipes/silence_trim.py`: Tăiere automată a pauzelor moarte pe baza detecției de silențiu cu crossfade fin și tăieturi video sincronizate (jump-cut).
+  - `src/media_lab/recipes/sfx.py`: Sound effects engine (efecte sonore whoosh, pop, ding, riser, impact sincronizate la tăieturi, subtitrări sau momente cheie).
+  - CLI: `media-lab audio-enhance`, `media-lab cut-silence`, `media-lab sfx`.
+  - Teste unitare și de integrare.
+
+---
+
+### Pasul 2 — Zona 2: Video & Pacing (`smart_reframe`, `punch_zoom`, `broll`) — GATA
+- **Ce se face**:
+  - `src/media_lab/recipes/smart_reframe.py`: Reîncadrare inteligentă 9:16 cu face tracking și panning fluid cinematic.
+  - `src/media_lab/recipes/punch_zoom.py`: Punch-in zooms dinamice (1.1x–1.15x) pe punctele cheie pentru retenție video.
+  - `src/media_lab/recipes/broll.py`: Inserare automată de cadre B-Roll (imagine/video cutaway) cu pista audio principală păstrată neîntreruptă (L-cut/J-cut).
+  - CLI: `media-lab smart-reframe`, `media-lab punch-zoom`, `media-lab broll`.
+  - Teste unitare și de integrare.
+
+---
+
+### Pasul 3 — Zona 3: Foto & Grafică (`typography`, `inpainting`, `face_retouch`) — GATA
+- **Ce se face**:
+  - `src/media_lab/recipes/typography.py`: Motor de text & titluri grafice peste imagini/video (drop shadow, stroke, capsule colorate, împachetare automată).
+  - `src/media_lab/recipes/inpainting.py`: Ștergere obiecte nedorite și reconstrucție fundal (inpainting local).
+  - `src/media_lab/recipes/face_retouch.py`: Retușare portret: netezire discretă a tenului și simulare adâncime de câmp (defocus blur pe fundal cu separare de mască).
+  - CLI: `media-lab text-overlay`, `media-lab inpaint`, `media-lab retouch`.
+  - Teste unitare și de integrare.
+
+---
+
+### Pasul 4 — Zona 4: Prompt-to-Edit & MCP Server (`prompt_agent`, `mcp_server`, `edit_spec`) — GATA
+- **Ce se face**:
+  - `src/media_lab/prompt_agent.py`: Interpret inteligent de prompturi în limbaj natural (română și engleză) care traduce cererea utilizatorului în `EditSpec`.
+  - Extindere `src/media_lab/edit_spec.py` și `src/media_lab/recipes/edit.py` pentru noile capabilități.
+  - `src/media_lab/mcp_server.py`: Server nativ Model Context Protocol (MCP) prin stdio pentru integrare directă cu Antigravity, Claude, Cursor.
+  - CLI: `media-lab prompt` și `media-lab mcp`.
+  - Teste complete.
+
+---
+
+### Pasul 5 — Verificare completă, Code Review, Documentație și Push — GATA
+- Verificare completă: `make check` (0 linter errors, strict mypy 0 issues, pytest acoperire $\ge 80\%$).
+- Audit de cod și securitate realizat de agentul Lead Code Reviewer & Security Auditor; remediate toate constatările identificate (audio-only verify_render, -loop 1 video typography, verificare audio broll, amix stereo sample rate format, silencedetect EOF handling, aresample anti-drift, etc.).
+- Documentare completată în `README.md` și `DECISIONS.md`.
+- Sincronizare și push pe git pe branch-ul `feat/video-agent-phase2`.
+
+---
+
+# FAZA 5 — Studio 360° & Interfață Web Chat Locală
+
+Completarea ultimelor superputeri de studio (asamblare multi-clip cu tranziții cinematice, speed ramping cu conservarea pitch-ului, bare dinamice de retenție social media, sincronizare pe ritm muzical și narator local offline TTS) și crearea unei interfețe web chat interactive cu player video integrat (`media-lab studio`).
+
+## Pași de implementare
+
+### Pasul 1 — Motorul de Montaj Studio 360° — GATA
+- `src/media_lab/recipes/assembly.py`: Asamblare N-clipuri cu tranziții `xfade` (`fade`, `wipeleft`, `wiperight`, `dissolve`, `fadeblack` etc.) și `acrossfade` audio.
+- `src/media_lab/recipes/speed.py`: Modificare viteză (0.1x–10.0x) cu recalculare `setpts` și lanț `atempo`.
+- `src/media_lab/recipes/progress_bar.py`: Bară animată de retenție social media prin overlay dinamic continuu.
+- `src/media_lab/recipes/beat_sync.py`: Detecție de ritm și tranzienți audio pentru alinierea tăieturilor.
+- `src/media_lab/recipes/narrator.py`: Text-to-speech local offline cu voce română și engleză.
+- Comenzi CLI: `media-lab assemble`, `media-lab speed`, `media-lab progress-bar`, `media-lab beat-sync`, `media-lab narrate`.
+
+---
+
+### Pasul 2 — Extindere EditSpec & Prompt Agent — GATA
+- Adăugare parametri noi în `EditSpec`: `speed`, `progress_bar`, `progress_bar_color`, `progress_bar_position`.
+- Învățare comenzi noi în `prompt_agent.py` (recunoaștere viteză / slow motion / timelapse, culori și poziții bară retenție).
+- Conectare în `recipes/edit.py` și expunere în MCP Server.
+
+---
+
+### Pasul 3 — Interfața Web Locală (Studio Chat & Player UI) — GATA
+- `src/media_lab/server.py`: Server HTTP local pur Python (`media-lab studio` la `http://localhost:8765`).
+- Suport complet HTTP Range requests (RFC 7233) pentru streaming fluid video/audio și scrub în playerul HTML5.
+- Protecție path traversal (`is_relative_to`), validare origini și căi permise.
+- Interfață SPA Dark-mode (Apple/Studio style): explorer fișiere `in/`/`out/`/`work/`, chat interactiv cu agentul, player video integrat, statistici media, igienizare DOM XSS.
+
+---
+
+### Pasul 4 — Teste, Verificare `make check`, Documentație și Push — GATA
+- Teste unitare și de integrare în `tests/test_studio_360.py` și `tests/test_server.py`.
+- Verificare completă: `make check` (0 linter errors, strict mypy 0 issues, pytest 330+ teste trecute, acoperire $\ge 80\%$).
+- Audit de cod și securitate integrat complet; aplicate toate remediile de securitate și fiabilitate.
+- Documentare în `README.md` și `DECISIONS.md`.
+- Sincronizare și push pe git pe branch-ul `feat/video-agent-phase2`.
+
+
+

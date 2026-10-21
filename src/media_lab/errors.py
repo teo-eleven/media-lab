@@ -15,7 +15,7 @@ class ConfigError(MediaLabError):
     """Configuration is missing, malformed, or points at something absent."""
 
 
-class ValidationError(MediaLabError):
+class ValidationError(MediaLabError, ValueError):
     """A caller-supplied argument is outside the range this project accepts."""
 
 
@@ -60,6 +60,15 @@ class FFmpegError(MediaLabError):
 
 class ProbeError(MediaLabError):
     """ffprobe could not read a file, or returned something unusable."""
+
+
+class MlEnvError(MediaLabError):
+    """The ML layer failed: the RVM checkout or weights are missing, or an ML
+    subprocess exited non-zero or timed out."""
+
+
+class SpecError(MediaLabError):
+    """A compose-spec YAML file is missing a field or holds an invalid value."""
 
 
 class VerificationError(MediaLabError):

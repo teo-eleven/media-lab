@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Media Lab Studio</title>
+  <style>
+    :root {
+      --bg-dark: #0f1117;
+      --bg-panel: #161a23;
+      --bg-card: #1f2430;
+      --border: #2a3142;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --accent-glow: rgba(99, 102, 241, 0.25);
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg-dark);
+      color: var(--text-main);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    header {
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 1.15rem;
+      letter-spacing: -0.5px;
+    }
+    .badge-status {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--success);
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot { width: 7px; height: 7px; background: var(--success); border-radius: 50%; }
+    .layout {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+    /* Left: File Explorer */
+    .sidebar-files {
+      width: 280px;
+      background: var(--bg-panel);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar-title {
+      padding: 14px 16px;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .file-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+    .file-item {
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+      transition: background 0.15s;
+    }
+    .file-item:hover { background: var(--bg-card); }
+    .file-item.active { background: var(--accent-glow); border: 1px solid var(--accent); color: white; }
+    .file-icon { font-size: 1rem; }
+    .file-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-size { font-size: 0.7rem; color: var(--text-muted); }
+
+    /* Center: Chat Interface */
+    .chat-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-dark);
+      border-right: 1px solid var(--border);
+    }
+    .messages-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .message {
+      max-width: 80%;
+      padding: 14px 18px;
+      border-radius: 12px;
+      line-height: 1.5;
+      font-size: 0.92rem;
+    }
+    .message.user {
+      align-self: flex-end;
+      background: var(--accent);
+      color: white;
+      border-bottom-right-radius: 2px;
+    }
+    .message.agent {
+      align-self: flex-start;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      border-bottom-left-radius: 2px;
+    }
+    .plan-card {
+      margin-top: 10px;
+      background: var(--bg-card);
+      border-radius: 8px;
+      padding: 12px;
+      border: 1px solid rgba(255,255,255,0.05);
+    }
+    .plan-card h4 { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; }
+    .plan-step { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; margin-bottom: 6px; }
+    .step-badge {
+      background: var(--accent);
+      color: white;
+      font-size: 0.7rem;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+    }
+    .suggestions {
+      padding: 8px 16px;
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      background: var(--bg-panel);
+      border-top: 1px solid var(--border);
+    }
+    .chip {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 16px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .chip:hover { color: var(--text-main); border-color: var(--accent); }
+    .chat-input-bar {
+      padding: 16px;
+      background: var(--bg-panel);
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 12px;
+    }
+    .chat-input {
+      flex: 1;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      color: white;
+      font-size: 0.92rem;
+      outline: none;
+    }
+    .chat-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+    .btn {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.9rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s;
+    }
+    .btn:hover { background: var(--accent-hover); }
+    .btn.secondary { background: var(--bg-card); border: 1px solid var(--border); color: var(--text-main); }
+    .btn.secondary:hover { background: var(--border); }
+
+    /* Right: Media Preview */
+    .preview-panel {
+      width: 440px;
+      background: var(--bg-panel);
+      display: flex;
+      flex-direction: column;
+    }
+    .player-box {
+      background: black;
+      width: 100%;
+      height: 320px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .player-box video, .player-box img, .player-box audio {
+      max-width: 100%;
+      max-height: 100%;
+    }
+    .media-meta {
+      padding: 16px;
+      flex: 1;
+      overflow-y: auto;
+    }
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.85rem;
+    }
+    .meta-label { color: var(--text-muted); }
+    .meta-value { font-weight: 500; }
+
+    /* Settings Modal */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .modal-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      width: 480px;
+      max-width: 90vw;
+      padding: 24px;
+      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.5);
+    }
+    .form-group { margin-bottom: 16px; }
+    .form-label { display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px; font-weight: 500; }
+    .form-input, .form-select {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      color: var(--text-main);
+      font-size: 0.9rem;
+      outline: none;
+    }
+    .form-input:focus, .form-select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-glow);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span>🎬</span>
+      <span>Media Lab Studio</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <div class="badge-status" id="brainBadge" style="cursor: pointer;" onclick="openSettingsModal()" title="Configurează creierul AI">
+        <span class="dot"></span>
+        <span id="brainBadgeText">🧠 Creier AI: Local Semantic</span>
+      </div>
+      <button class="btn secondary" style="padding: 4px 10px; font-size: 0.78rem;" onclick="resetSession()" title="Șterge istoricul și începe de la zero">🔄 Reset Context</button>
+      <button class="btn secondary" style="padding: 4px 10px; font-size: 0.78rem;" onclick="openSettingsModal()">⚙️ Setări</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- Left: Files -->
+    <aside class="sidebar-files">
+      <div class="sidebar-title">
+        <span>Fișiere Media</span>
+        <button class="btn secondary" style="padding: 2px 8px; font-size: 0.7rem;" onclick="loadFiles()">Refresh</button>
+      </div>
+      <div class="file-list" id="fileList"></div>
+    </aside>
+
+    <!-- Center: Chat -->
+    <main class="chat-container">
+      <div class="messages-area" id="messagesArea">
+        <div class="message agent">
+          Salut! Sunt <strong>Media Lab Agent</strong>. Poți selecta un fișier din stânga și să-mi spui în limbaj natural ce vrei să editez (video, audio sau foto). Cum te pot ajuta astăzi?
+        </div>
+      </div>
+
+      <div class="suggestions">
+        <span class="chip" onclick="applySuggestion('Urmărește mișcarea persoanei cu camera lin și stabilizează clipul')">🎥 Cameră Dinamică (Follow)</span>
+        <span class="chip" onclick="applySuggestion('Fă un short vertical 9:16 cu subtitrări galbene TikTok, curăță vocea și taie pauzele')">📱 Short 9:16 + Subtitrări</span>
+        <span class="chip" onclick="applySuggestion('Adaugă o bară animată de progres galbenă la bază și zoom dinamic la 4 secunde')">⚡ Progres + Zoom</span>
+        <span class="chip" onclick="applySuggestion('Curăță vocea cu profil podcast, aplică de-esser și normalizează sunetul')">🎙️ Mastering Voce</span>
+        <span class="chip" onclick="applySuggestion('Retușează tenul discret, adaugă bokeh pe fundal și un badge cu titlul sus')">🎨 Retuș Foto</span>
+      </div>
+
+      <div class="chat-input-bar">
+        <input type="text" id="promptInput" class="chat-input" placeholder="Scrie o instrucțiune sau întreabă agentul (ex: poți urmări mișcarea persoanei cu camera?)..." onkeydown="if(event.key==='Enter') sendPrompt()">
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text-muted); cursor: pointer; white-space: nowrap; user-select: none;" title="Dacă este bifat, execută direct randarea fără confirmare regizorală prealabilă">
+          <input type="checkbox" id="autoRenderToggle" style="cursor: pointer;"> Auto-randare
+        </label>
+        <button class="btn btn-primary" onclick="sendPrompt()">Trimite 💬</button>
+      </div>
+    </main>
+
+    <!-- Right: Player & Inspector -->
+    <aside class="preview-panel">
+      <div class="sidebar-title">Previzualizare & Player</div>
+      <div class="player-box" id="playerBox">
+        <div style="color: var(--text-muted); font-size: 0.85rem;">Selectează un fișier pentru redare</div>
+      </div>
+      <div class="media-meta" id="mediaMeta">
+        <div class="meta-row"><span class="meta-label">Fișier activ</span><span class="meta-value" id="metaName">-</span></div>
+        <div class="meta-row"><span class="meta-label">Tip</span><span class="meta-value" id="metaType">-</span></div>
+        <div class="meta-row"><span class="meta-label">Dimensiune</span><span class="meta-value" id="metaSize">-</span></div>
+        <div class="meta-row"><span class="meta-label">Folder</span><span class="meta-value" id="metaFolder">-</span></div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    let currentSelectedFile = null;
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    async function loadFiles() {
+      try {
+        const res = await fetch('/api/files');
+        const data = await res.json();
+        const container = document.getElementById('fileList');
+        container.innerHTML = '';
+
+        let defaultCandidate = null;
+
+        ['in', 'out', 'work'].forEach(folder => {
+          const files = data[folder] || [];
+          if (files.length === 0) return;
+          const groupHeader = document.createElement('div');
+          groupHeader.style = "padding: 8px 4px 4px 4px; font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700;";
+          groupHeader.textContent = folder.toUpperCase() + ' (' + files.length + ')';
+          container.appendChild(groupHeader);
+
+          files.forEach(f => {
+            if (!defaultCandidate && (folder === 'in' || folder === 'out') && f.type === 'video') {
+              defaultCandidate = { folder, ...f };
+            }
+            const item = document.createElement('div');
+            item.className = 'file-item';
+            if (currentSelectedFile && currentSelectedFile.folder === folder && currentSelectedFile.name === f.name) {
+              item.classList.add('active');
+            }
+            const icon = f.type === 'video' ? '🎬' : (f.type === 'audio' ? '🎵' : '🖼️');
+            item.innerHTML = `<span class="file-icon">${icon}</span><span class="file-name">${escapeHtml(f.name)}</span><span class="file-size">${escapeHtml(f.size_human)}</span>`;
+            item.onclick = (e) => selectFile(folder, f, e);
+            container.appendChild(item);
+          });
+        });
+
+        if (!currentSelectedFile && defaultCandidate) {
+          selectFile(defaultCandidate.folder, defaultCandidate, null);
+        }
+      } catch (err) {
+        console.error("Error loading files:", err);
+      }
+    }
+
+    function selectFile(folder, f, event) {
+      currentSelectedFile = { folder, ...f };
+      document.querySelectorAll('.file-item').forEach(el => el.classList.remove('active'));
+      if (event && event.currentTarget) {
+        event.currentTarget.classList.add('active');
+      }
+
+      document.getElementById('metaName').textContent = f.name;
+      document.getElementById('metaType').textContent = f.type.toUpperCase();
+      document.getElementById('metaSize').textContent = f.size_human;
+      document.getElementById('metaFolder').textContent = folder + '/';
+
+      const mediaUrl = `/media/${folder}/${encodeURIComponent(f.name)}`;
+      const box = document.getElementById('playerBox');
+      if (f.type === 'video') {
+        box.innerHTML = `<video controls autoplay loop src="${mediaUrl}"></video>`;
+      } else if (f.type === 'audio') {
+        box.innerHTML = `<div style="padding: 20px; text-align: center;"><audio controls autoplay src="${mediaUrl}"></audio></div>`;
+      } else {
+        const img = document.createElement('img');
+        img.src = mediaUrl;
+        img.alt = f.name;
+        box.innerHTML = '';
+        box.appendChild(img);
+      }
+    }
+
+    function renderMarkdown(md) {
+      if (!md) return '';
+      let html = escapeHtml(md);
+      html = html.replace(/^### (.*$)/gim, '<h4 style="margin: 8px 0 4px 0; color: #fff; font-size: 1rem;">$1</h4>');
+      html = html.replace(/^## (.*$)/gim, '<h3 style="margin: 10px 0 6px 0; color: #fff; font-size: 1.1rem;">$1</h3>');
+      html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+      html = html.replace(/`([^`]+)`/g, '<code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 0.85em; color: #818cf8;">$1</code>');
+      html = html.replace(/^&gt; (.*$)/gim, '<blockquote style="border-left: 3px solid var(--accent); padding-left: 8px; margin: 6px 0; color: var(--text-muted); font-style: italic;">$1</blockquote>');
+      html = html.replace(/^- (.*$)/gim, '<div style="margin-left: 12px; margin-bottom: 3px;">• $1</div>');
+      html = html.replace(/\n\n/g, '<div style="height: 8px;"></div>');
+      html = html.replace(/\n/g, '<br>');
+      return html;
+    }
+
+    function applySuggestion(text) {
+      const input = document.getElementById('promptInput');
+      input.value = text;
+      input.focus();
+    }
+
+    async function sendPrompt(customText) {
+      const input = document.getElementById('promptInput');
+      const text = (customText || input.value).trim();
+      if (!text) return;
+
+      const messagesArea = document.getElementById('messagesArea');
+
+      // Append user bubble
+      const userMsg = document.createElement('div');
+      userMsg.className = 'message user';
+      userMsg.textContent = text;
+      messagesArea.appendChild(userMsg);
+      if (!customText) input.value = '';
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+
+      // Check if user explicitly demanded direct execution or auto-render is on
+      const lower = text.toLowerCase();
+      const directExecuteKeywords = [
+        "randeaza direct", "randează direct", "aplica direct", "aplică direct",
+        "executa acum", "execută acum", "fa direct", "fă direct",
+        "da-i drumul", "dă-i drumul", "randeaza acum", "randează acum"
+      ];
+      const autoRenderToggle = document.getElementById('autoRenderToggle');
+      const shouldAutoExecute = (autoRenderToggle && autoRenderToggle.checked) ||
+        directExecuteKeywords.some(k => lower.includes(k));
+
+      // Agent placeholder
+      const agentMsg = document.createElement('div');
+      agentMsg.className = 'message agent';
+      agentMsg.innerHTML = shouldAutoExecute
+        ? `<em>⚙️ Randez direct cererea ta: <strong>"${escapeHtml(text)}"</strong>... Te rog așteaptă câteva momente...</em>`
+        : `<em>🧠 Analizez și formulez răspunsul regizoral pentru: <strong>"${escapeHtml(text)}"</strong>...</em>`;
+      messagesArea.appendChild(agentMsg);
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+
+      const payload = {
+        prompt: text,
+        input: currentSelectedFile ? `${currentSelectedFile.folder}/${currentSelectedFile.name}` : null,
+        execute: shouldAutoExecute
+      };
+
+      try {
+        const res = await fetch('/api/prompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          agentMsg.innerHTML = `<span style="color: var(--danger);">❌ Eroare: ${escapeHtml(data.error)}</span>`;
+          return;
+        }
+
+        // Render completed direct execution
+        if (data.steps && data.steps.length > 0) {
+          let stepsHtml = data.steps.map(step =>
+            `<div class="plan-step"><span class="step-badge">✓</span><span>${escapeHtml(step)}</span></div>`
+          ).join('');
+
+          agentMsg.innerHTML = `
+            <div>${renderMarkdown(data.reply || '🎉 Randare completată cu succes!')}</div>
+            <div class="plan-card" style="margin-top: 10px;">
+              <div style="font-weight: 700; margin-bottom: 8px; color: #fff;">✅ Etape finalizate:</div>
+              ${stepsHtml}
+            </div>
+            <div style="margin-top: 10px; font-weight: 600;">
+              Fișier generat: <code style="color: var(--success);">${escapeHtml(data.output)}</code>
+            </div>
+          `;
+
+          await loadFiles();
+          if (data.output) {
+            selectFile('out', { name: data.output, type: 'video', size_human: 'Randat' }, null);
+          }
+        } else {
+          // Conversational reply and plan formulation
+          let replyHtml = renderMarkdown(data.reply || '');
+
+          if (data.operations && data.operations.length > 0) {
+            let opsHtml = data.operations.map((op, idx) =>
+              `<div class="plan-step"><span class="step-badge">${idx + 1}</span><span>${escapeHtml(op)}</span></div>`
+            ).join('');
+
+            const safePromptEnc = encodeURIComponent(data.prompt || text);
+            replyHtml += `
+              <div class="plan-card" style="margin-top: 12px; border: 1px solid var(--accent); background: rgba(99, 102, 241, 0.08);">
+                <div style="font-weight: 700; margin-bottom: 8px; color: #818cf8; display: flex; align-items: center; gap: 6px;">
+                  <span>📋</span><span>Plan de Producție Pregătit:</span>
+                </div>
+                ${opsHtml}
+                <div style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap;">
+                  <button class="btn btn-primary" onclick="executePlan('${safePromptEnc}')" style="font-weight: 700; padding: 8px 18px; font-size: 0.9rem; cursor: pointer;">
+                    ▶️ Aplică și Randează
+                  </button>
+                  <button class="btn btn-secondary" onclick="document.getElementById('promptInput').focus();" style="font-size: 0.85rem; padding: 8px 14px; cursor: pointer;">
+                    💬 Ajustează comanda
+                  </button>
+                </div>
+              </div>
+            `;
+          }
+
+          if (data.suggested_prompts && data.suggested_prompts.length > 0) {
+            let chipsHtml = data.suggested_prompts.map(p => {
+              const safeP = escapeHtml(p).replace(/'/g, "\\'");
+              return `<span class="chip" style="font-size: 0.76rem;" onclick="applySuggestion('${safeP}')">${escapeHtml(p)}</span>`;
+            }).join('');
+            replyHtml += `<div style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px;">${chipsHtml}</div>`;
+          }
+          agentMsg.innerHTML = replyHtml;
+        }
+      } catch (err) {
+        agentMsg.innerHTML = `<span style="color: var(--danger);">Eroare rețea: ${escapeHtml(err.message)}</span>`;
+      }
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+    }
+
+    async function executePlan(encodedPrompt) {
+      const text = decodeURIComponent(encodedPrompt);
+      const messagesArea = document.getElementById('messagesArea');
+
+      const statusMsg = document.createElement('div');
+      statusMsg.className = 'message agent';
+      statusMsg.innerHTML = `<em>⚙️ Randez clipul prin motorul Media Lab (FFmpeg & AI)... Te rog așteaptă câteva momente...</em>`;
+      messagesArea.appendChild(statusMsg);
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+
+      const payload = {
+        prompt: text,
+        input: currentSelectedFile ? `${currentSelectedFile.folder}/${currentSelectedFile.name}` : null,
+        execute: true
+      };
+
+      try {
+        const res = await fetch('/api/prompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          statusMsg.innerHTML = `<span style="color: var(--danger);">❌ Eroare la randare: ${escapeHtml(data.error)}</span>`;
+          return;
+        }
+
+        let stepsHtml = (data.steps || []).map((step, i) =>
+          `<div class="plan-step"><span class="step-badge">✓</span><span>${escapeHtml(step)}</span></div>`
+        ).join('');
+
+        statusMsg.innerHTML = `
+          <div>${renderMarkdown(data.reply || '🎉 Randare completată cu succes!')}</div>
+          <div class="plan-card" style="margin-top: 10px;">
+            <div style="font-weight: 700; margin-bottom: 8px; color: #fff;">✅ Pași finalizați:</div>
+            ${stepsHtml}
+          </div>
+          <div style="margin-top: 10px; font-weight: 600;">
+            Fișier generat: <code style="color: var(--success);">${escapeHtml(data.output)}</code>
+          </div>
+        `;
+
+        await loadFiles();
+
+        // Select the newly rendered output in the player
+        if (data.output) {
+          selectFile('out', { name: data.output, type: 'video', size_human: 'Nou' }, null);
+        }
+      } catch (err) {
+        statusMsg.innerHTML = `<span style="color: var(--danger);">Eroare rețea la randare: ${escapeHtml(err.message)}</span>`;
+      }
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+    }
+
+    async function loadSessionInfo() {
+      try {
+        const res = await fetch('/api/session');
+        const data = await res.json();
+        const badge = document.getElementById('brainBadgeText');
+        const providerName = data.provider === 'gemini' ? 'Google Gemini' : (data.provider === 'ollama' ? 'Local Ollama' : (data.provider === 'openai' ? 'OpenAI GPT' : 'Local Semantic'));
+        badge.textContent = `🧠 Creier AI: ${providerName}`;
+      } catch (e) {
+        console.error("Session info error:", e);
+      }
+    }
+
+    async function loadSettings() {
+      try {
+        const res = await fetch('/api/settings');
+        const data = await res.json();
+        document.getElementById('settingProvider').value = data.provider || 'auto';
+        document.getElementById('settingOllamaUrl').value = data.ollama_url || 'http://localhost:11434';
+        toggleProviderInputs();
+      } catch (e) {
+        console.error("Settings load error:", e);
+      }
+    }
+
+    function toggleProviderInputs() {
+      const p = document.getElementById('settingProvider').value;
+      document.getElementById('geminiKeyGroup').style.display = (p === 'gemini' || p === 'auto') ? 'block' : 'none';
+      document.getElementById('openaiKeyGroup').style.display = (p === 'openai') ? 'block' : 'none';
+      document.getElementById('ollamaUrlGroup').style.display = (p === 'ollama') ? 'block' : 'none';
+    }
+
+    function openSettingsModal() {
+      loadSettings();
+      document.getElementById('settingsModal').style.display = 'flex';
+    }
+
+    function closeSettingsModal() {
+      document.getElementById('settingsModal').style.display = 'none';
+    }
+
+    async function saveSettings() {
+      const p = document.getElementById('settingProvider').value;
+      const gKey = document.getElementById('settingGeminiKey').value.trim();
+      const oKey = document.getElementById('settingOpenaiKey').value.trim();
+      const olUrl = document.getElementById('settingOllamaUrl').value.trim();
+
+      const payload = { provider: p };
+      if (gKey) payload.gemini_api_key = gKey;
+      if (oKey) payload.openai_api_key = oKey;
+      if (olUrl) payload.ollama_url = olUrl;
+
+      try {
+        await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        closeSettingsModal();
+        await loadSessionInfo();
+      } catch (e) {
+        alert("Eroare la salvarea setărilor: " + e.message);
+      }
+    }
+
+    async function resetSession() {
+      try {
+        await fetch('/api/session/reset', { method: 'POST' });
+        const messagesArea = document.getElementById('messagesArea');
+        const resetNotice = document.createElement('div');
+        resetNotice.className = 'message agent';
+        resetNotice.innerHTML = `<em>🔄 Contextul a fost resetat. Randările viitoare nu vor mai moșteni setările anterioare decât dacă specifici explicit.</em>`;
+        messagesArea.appendChild(resetNotice);
+        messagesArea.scrollTop = messagesArea.scrollHeight;
+        await loadSessionInfo();
+      } catch (e) {
+        console.error("Reset error:", e);
+      }
+    }
+
+    window.onload = async () => {
+      await loadFiles();
+      await loadSessionInfo();
+    };
+  </script>
+
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="settingsModal" onclick="if(event.target === this) closeSettingsModal()">
+    <div class="modal-card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h3 style="font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">⚙️ Configurare Creier AI (LLM)</h3>
+        <button class="btn secondary" style="padding: 2px 8px;" onclick="closeSettingsModal()">✕</button>
+      </div>
+      <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 16px;">
+        Alege motorul de raționare cognitivă pentru interpretarea comenzilor complexe, gestionarea continuității și compensarea defectelor de cameră.
+      </p>
+      <div class="form-group">
+        <label class="form-label">Furnizor AI (Provider)</label>
+        <select class="form-select" id="settingProvider" onchange="toggleProviderInputs()">
+          <option value="auto">Auto (Gemini dacă e cheie, altfel Local Semantic)</option>
+          <option value="gemini">Google Gemini (Cloud via httpx)</option>
+          <option value="ollama">Local Ollama (Offline / localhost:11434)</option>
+          <option value="openai">OpenAI (GPT-4o)</option>
+          <option value="local">Local Semantic Engine (100% Offline, 0 Chei)</option>
+        </select>
+      </div>
+      <div class="form-group" id="geminiKeyGroup">
+        <label class="form-label">Google Gemini API Key (opțional)</label>
+        <input type="password" class="form-input" id="settingGeminiKey" placeholder="AIzaSy...">
+      </div>
+      <div class="form-group" id="openaiKeyGroup" style="display: none;">
+        <label class="form-label">OpenAI API Key (opțional)</label>
+        <input type="password" class="form-input" id="settingOpenaiKey" placeholder="sk-...">
+      </div>
+      <div class="form-group" id="ollamaUrlGroup" style="display: none;">
+        <label class="form-label">Ollama Host URL</label>
+        <input type="text" class="form-input" id="settingOllamaUrl" value="http://localhost:11434">
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;">
+        <button class="btn secondary" onclick="closeSettingsModal()">Anulează</button>
+        <button class="btn" onclick="saveSettings()">Salvează Setările</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
