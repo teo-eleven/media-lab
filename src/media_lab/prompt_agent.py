@@ -462,8 +462,12 @@ def interpret_prompt(
         for k in (
             "schimba fundalul",
             "schimbă fundalul",
+            "schimbi fundalul",
+            "schimbam fundalul",
+            "schimbăm fundalul",
             "pune fundal",
             "alt fundal",
+            "fundal nou",
             "inlocuieste fundalul",
             "înlocuiește fundalul",
             "replace background",
@@ -472,7 +476,26 @@ def interpret_prompt(
         )
     ):
         cutout = True
-        backdrop = "in/punto-bg.png" if "punto" in p_lower else "in/demo-bg.png"
+        if "times square" in p_lower:
+            backdrop = "in/backgrounds/01-times-square.mp4"
+        elif "tower bridge" in p_lower or "london" in p_lower:
+            backdrop = "in/backgrounds/02-tower-bridge.mp4"
+        elif "shanghai" in p_lower:
+            backdrop = "in/backgrounds/03-shanghai-bund.mp4"
+        elif "shibuya" in p_lower or "tokyo" in p_lower:
+            backdrop = "in/backgrounds/04-shibuya.mp4"
+        elif "bucharest" in p_lower or "bucuresti" in p_lower or "arc" in p_lower:
+            backdrop = "in/backgrounds/05-bucharest-arch.jpg"
+        elif "desert" in p_lower or "sahara" in p_lower:
+            backdrop = "in/backgrounds/06-desert.mp4"
+        elif "wall street" in p_lower:
+            backdrop = "in/backgrounds/nyc-wallst.mp4"
+        elif "nyc" in p_lower or "new york" in p_lower:
+            backdrop = "in/backgrounds/nyc-ts.mp4"
+        elif "punto" in p_lower:
+            backdrop = "in/punto-bg.png"
+        else:
+            backdrop = "in/demo-bg.png"
 
     # 17. AI Neural Super-Resolution (Real-ESRGAN Upscaling)
     upscale_val = 0

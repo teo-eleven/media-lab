@@ -13,7 +13,7 @@ import re
 import threading
 import urllib.parse
 import webbrowser
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -25,6 +25,7 @@ from .kino import KinoRunner
 from .llm import LLMConfig, spec_to_dict
 from .ml_runner import MlRunner
 from .prompt_agent import chat_agent, execute_prompt
+from .recipes.edit import run_edit_spec
 from .recipes.footage_scout import scout_library
 from .recipes.omni_export import omni_export
 from .recipes.reelify import reelify
@@ -324,18 +325,15 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
             previous_spec=self.session.last_spec,
             history=self.session.chat_history,
         )
-        is_informational = chat_res.intent in (
+        is_purely_conversational = chat_res.intent in (
             "greeting",
             "help",
             "inspect",
             "ideation",
-            "question",
-            "consultation",
-            "clarification",
-        )
+        ) or (chat_res.spec is None or not chat_res.executable)
 
-        if not execute or is_informational:
-            if chat_res.spec is not None and not is_informational:
+        if not execute or is_purely_conversational:
+            if chat_res.spec is not None and chat_res.executable:
                 self.session.last_spec = chat_res.spec
                 self.session.chat_history.append({"role": "user", "content": prompt_str})
                 self.session.chat_history.append({"role": "agent", "content": chat_res.reply})
@@ -373,16 +371,26 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
         out_path = candidate
 
         try:
-            result = execute_prompt(
-                prompt_str,
-                src_path,
-                out_path,
-                self.config,
-                self.runner,
-                self.ml_runner,
-                previous_spec=self.session.last_spec,
-                force=True,
-            )
+            if chat_res.spec is not None and chat_res.executable:
+                spec_to_run = replace(chat_res.spec, source=str(src_path), output=str(out_path))
+                result = run_edit_spec(
+                    spec_to_run,
+                    self.config,
+                    self.runner,
+                    self.ml_runner,
+                    force=True,
+                )
+            else:
+                result = execute_prompt(
+                    prompt_str,
+                    src_path,
+                    out_path,
+                    self.config,
+                    self.runner,
+                    self.ml_runner,
+                    previous_spec=self.session.last_spec,
+                    force=True,
+                )
             # Update session state
             if chat_res.spec is not None:
                 self.session.last_spec = chat_res.spec

@@ -20,6 +20,7 @@ from ..kino import KinoRunner
 from ..ml_runner import MlRunner
 from ..paths import ensure_readable_source, ensure_writable_output, work_directory
 from ..probe import MediaInfo, probe
+from ..recipes.audio_attach import attach_audio
 from ..recipes.audio_bed import add_music_bed
 from ..recipes.audio_enhance import enhance_audio
 from ..recipes.auto_hook import extract_viral_hook
@@ -338,7 +339,14 @@ def run_edit_spec(
                 bg_path = (config.in_dir / "demo-bg.png").resolve()
             comp_video = work / "step3c_backdrop.mp4"
             place_on_backdrop(matte_video_path, bg_path, comp_video, config, runner, force=True)
-            current_clip = comp_video
+            # Re-attach original audio if subject had audio, as compositor drops audio
+            clip_has_audio = probe(current_clip, config).has_audio
+            if clip_has_audio:
+                voiced_video = work / "step3c_voiced.mp4"
+                attach_audio(comp_video, current_clip, voiced_video, config, force=True)
+                current_clip = voiced_video
+            else:
+                current_clip = comp_video
             steps_executed.append("backdrop_composite")
         else:
             current_clip = matte_video_path

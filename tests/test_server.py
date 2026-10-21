@@ -247,6 +247,26 @@ def test_studio_server_endpoints(config: Config) -> None:
             assert "deliverables" in omni_res
             assert len(omni_res["deliverables"]) == 4
 
+        # 15. Test POST /api/prompt execute on polite question prompt
+        post_polite = json.dumps(
+            {
+                "prompt": "Poti adauga o bara galbena la baza?",
+                "input": f"in/{src_file.name}",
+                "execute": True,
+            }
+        ).encode("utf-8")
+        req_polite = urllib.request.Request(
+            f"{base_url}/api/prompt",
+            data=post_polite,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req_polite) as resp:
+            assert resp.status == 200
+            res_polite = json.loads(resp.read().decode("utf-8"))
+            assert res_polite["status"] == "ok"
+            assert "output" in res_polite
+            assert (config.out_dir / res_polite["output"]).is_file()
+
     finally:
         server.shutdown()
         server.server_close()

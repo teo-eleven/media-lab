@@ -817,12 +817,57 @@ class CognitiveBrain:
         cutout = base_vid.cutout
         backdrop = base_vid.backdrop
         if any(
-            k in p_lower for k in ("scoate fundalul", "rvm", "cutout", "decupeaza", "decupează")
+            k in p_lower
+            for k in (
+                "scoate fundalul",
+                "rvm",
+                "cutout",
+                "decupeaza",
+                "decupează",
+                "sterge fundalul",
+                "șterge fundalul",
+            )
         ):
             cutout = True
-        if any(k in p_lower for k in ("schimba fundalul", "schimbă fundalul", "pune fundal")):
+        if any(
+            k in p_lower
+            for k in (
+                "schimba fundalul",
+                "schimbă fundalul",
+                "schimbi fundalul",
+                "schimbam fundalul",
+                "schimbăm fundalul",
+                "pune fundal",
+                "alt fundal",
+                "fundal nou",
+                "inlocuieste fundalul",
+                "înlocuiește fundalul",
+                "replace background",
+                "new background",
+                "backdrop",
+            )
+        ):
             cutout = True
-            backdrop = "in/punto-bg.png" if "punto" in p_lower else "in/demo-bg.png"
+            if "times square" in p_lower:
+                backdrop = "in/backgrounds/01-times-square.mp4"
+            elif "tower bridge" in p_lower or "london" in p_lower:
+                backdrop = "in/backgrounds/02-tower-bridge.mp4"
+            elif "shanghai" in p_lower:
+                backdrop = "in/backgrounds/03-shanghai-bund.mp4"
+            elif "shibuya" in p_lower or "tokyo" in p_lower:
+                backdrop = "in/backgrounds/04-shibuya.mp4"
+            elif "bucharest" in p_lower or "bucuresti" in p_lower or "arc" in p_lower:
+                backdrop = "in/backgrounds/05-bucharest-arch.jpg"
+            elif "desert" in p_lower or "sahara" in p_lower:
+                backdrop = "in/backgrounds/06-desert.mp4"
+            elif "wall street" in p_lower:
+                backdrop = "in/backgrounds/nyc-wallst.mp4"
+            elif "nyc" in p_lower or "new york" in p_lower:
+                backdrop = "in/backgrounds/nyc-ts.mp4"
+            elif "punto" in p_lower:
+                backdrop = "in/punto-bg.png"
+            elif not backdrop:
+                backdrop = "in/demo-bg.png"
 
         upscale = base_vid.upscale
         if any(k in p_lower for k in ("upscale", "super rezolutie", "super-rezoluție", "4k")):
