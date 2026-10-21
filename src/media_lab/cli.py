@@ -24,6 +24,7 @@ from .recipes.audio_bed import add_music_bed
 from .recipes.audio_enhance import VOICE_PROFILES, enhance_audio
 from .recipes.backdrop import place_on_backdrop
 from .recipes.beat_sync import detect_beats
+from .recipes.brand_kit import VALID_BRAND_POSITIONS, apply_brand_watermark
 from .recipes.broll import BrollCut, insert_broll
 from .recipes.camera_motion import VALID_CAMERA_MOTIONS, apply_camera_motion
 from .recipes.colour_match import colour_match
@@ -715,6 +716,33 @@ def build_parser() -> argparse.ArgumentParser:
         dest="generate_sheet",
         action="store_false",
         help="Skip contact sheet generation",
+    )
+
+    brand_cmd = subcommands.add_parser(
+        "brand",
+        help="Apply a corporate logo watermark with customizable position and opacity",
+    )
+    _add_io_arguments(brand_cmd)
+    brand_cmd.add_argument(
+        "--logo", required=True, help="Logo image path (PNG with alpha channel recommended)"
+    )
+    brand_cmd.add_argument(
+        "--position",
+        choices=sorted(VALID_BRAND_POSITIONS),
+        default="top-right",
+        help="Watermark corner position (default: top-right)",
+    )
+    brand_cmd.add_argument(
+        "--opacity", type=float, default=0.85, help="Logo opacity from 0.05 to 1.0"
+    )
+    brand_cmd.add_argument(
+        "--scale-pct",
+        type=float,
+        default=12.0,
+        help="Logo width as percentage of video width (default: 12.0)",
+    )
+    brand_cmd.add_argument(
+        "--margin", type=int, default=30, help="Margin distance from edges in pixels (default: 30)"
     )
 
     return parser
@@ -1578,6 +1606,22 @@ def _run_doctor_render(args: argparse.Namespace, config: Config, runner: KinoRun
     return 0 if report.passed or report.has_warnings else 1
 
 
+def _run_brand(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    result = apply_brand_watermark(
+        args.input,
+        args.logo,
+        args.output,
+        config,
+        position=args.position,
+        opacity=args.opacity,
+        scale_pct=args.scale_pct,
+        margin_px=args.margin,
+        force=args.force,
+    )
+    print(f"brand watermark ({result.position}, {result.opacity:.0%}) applied -> {result.output}")
+    return 0
+
+
 HANDLERS = {
     "stabilize": _run_stabilize,
     "camera-motion": _run_camera_motion,
@@ -1621,6 +1665,7 @@ HANDLERS = {
     "reelify": _run_reelify,
     "omni-export": _run_omni_export,
     "doctor-render": _run_doctor_render,
+    "brand": _run_brand,
 }
 
 
