@@ -588,7 +588,63 @@ Completarea ultimelor superputeri de studio (asamblare multi-clip cu tranziții 
 - Verificare completă: `make check` (0 linter errors, strict mypy 0 issues, pytest 330+ teste trecute, acoperire $\ge 80\%$).
 - Audit de cod și securitate integrat complet; aplicate toate remediile de securitate și fiabilitate.
 - Documentare în `README.md` și `DECISIONS.md`.
-- Sincronizare și push pe git pe branch-ul `feat/video-agent-phase2`.
+- Sincronizare și push pe git pe branch-ul `dev`.
+
+---
+
+# FAZA 6 — Hollywood VFX, Enterprise Marketing & Agenți Autonomi
+
+Integrarea celor mai bune practici din Hollywood (DaVinci Resolve Neural Engine, Frame.io v4 QC, Nuke) și Marketing Enterprise (Opus Clip, Descript, Captions.ai, Creatopy) într-o suită completă de producție autonomă video/audio/foto.
+
+## Etape de implementare
+
+### Etapa 6.1 — Subtitrări Kinetice & Auto-Emojis (Captions.ai style)
+- Generare tag-uri ASS de animație elastică cuvânt-cu-cuvânt (`\t(\fscx...\fscy...)`).
+- Dicționar semantic de emojis (română/engleză) cu inserare automată la cuvinte cheie.
+- Ancorare automată în Social Media Safe Zone (offset față de UI TikTok/Reels).
+- Teste: `tests/test_kinetic_subtitles.py`.
+- Livrabil: `media-lab subtitles in/clip.mp4 -o out/subbed.mp4 --kinetic --emojis --burn`.
+
+---
+
+### Etapa 6.2 — Brand Kit & Watermark Engine (Creatopy / Enterprise Marketing)
+- `src/media_lab/recipes/brand_kit.py`: Plasare logo transparent, scalare procentuală din canvas, opacitate reglabilă, padding în colțurile ecranului.
+- Bounding box overlay pentru inspecție de zonă sigură (Safe Zone QC).
+- Teste: `tests/test_brand_kit.py`.
+- Livrabil: `media-lab brand in/clip.mp4 --logo in/logo.png -o out/branded.mp4`.
+
+---
+
+### Etapa 6.3 — Auto-Hook & Viral Energy Slicing (Opus Clip style)
+- `src/media_lab/recipes/auto_hook.py`: Calcul de energie acustică RMS și detecție spike-uri pe ferestre glisante.
+- Analiză ritm vorbire și decupare automată a celor mai captivante 30–60s cu crossfade audio.
+- Teste: `tests/test_auto_hook.py`.
+- Livrabil: `media-lab auto-hook in/podcast.mp4 -o out/hook_clip.mp4`.
+
+---
+
+### Etapa 6.4 — Render Doctor Auto-Correction & Multimodal Audit (Frame.io QC)
+- Extindere `render_doctor.py` cu flag `--auto-fix`: corectare automată rezoluții impare, niveluri de negru zdrobite și clipping audio.
+- Export raport JSON structurat pentru pipeline-uri CI/CD.
+- Teste: `tests/test_render_doctor.py`.
+- Livrabil: `media-lab doctor-render out/render.mp4 --auto-fix -o out/fixed.mp4`.
+
+---
+
+### Etapa 6.5 — Footage Scout & Local Asset Library (B-Roll & Foley)
+- `src/media_lab/recipes/footage_scout.py`: Indexare și clasificare automată de cadre B-roll, sound effects (whoosh, pop, ding) și background plates.
+- Căutare rapidă după categorie, rezoluție și durată.
+- Teste: `tests/test_footage_scout.py`.
+- Livrabil: `media-lab scout --type sfx --name whoosh`.
+
+---
+
+### Etapa 6.6 — Integrarea în Web Studio UI, Prompt Agent & Sincronizare Git
+- Conectare comenzi noi în `prompt_agent.py` și `edit_spec.py`.
+- Butoane rapide în Web UI (`index.html`): "⚡ One-Click Reelify", "🌐 Omni Campaign Export", "🩺 Run Doctor Audit".
+- Verificare `make check` complet (100% verde) și push pe ramura `dev`.
+- Livrabil: Interfață complet funcțională la `http://localhost:8765`.
+
 
 
 
