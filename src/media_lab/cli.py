@@ -22,6 +22,7 @@ from .prompt_agent import execute_prompt, plan_prompt
 from .recipes.assembly import VALID_TRANSITIONS, assemble_clips
 from .recipes.audio_bed import add_music_bed
 from .recipes.audio_enhance import VOICE_PROFILES, enhance_audio
+from .recipes.auto_hook import extract_viral_hook
 from .recipes.backdrop import place_on_backdrop
 from .recipes.beat_sync import detect_beats
 from .recipes.brand_kit import VALID_BRAND_POSITIONS, apply_brand_watermark
@@ -743,6 +744,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     brand_cmd.add_argument(
         "--margin", type=int, default=30, help="Margin distance from edges in pixels (default: 30)"
+    )
+
+    hook_cmd = subcommands.add_parser(
+        "auto-hook",
+        help="Scan long video/audio and extract peak viral 30-60s clip based on acoustic energy",
+    )
+    _add_io_arguments(hook_cmd)
+    hook_cmd.add_argument(
+        "--duration",
+        type=float,
+        default=30.0,
+        help="Target duration in seconds for extracted hook clip (default: 30.0)",
+    )
+    hook_cmd.add_argument(
+        "--fade",
+        type=float,
+        default=0.15,
+        help="Fade-in and fade-out duration in seconds (default: 0.15)",
     )
 
     return parser
@@ -1622,6 +1641,22 @@ def _run_brand(args: argparse.Namespace, config: Config, _runner: KinoRunner) ->
     return 0
 
 
+def _run_auto_hook(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    result = extract_viral_hook(
+        args.input,
+        args.output,
+        config,
+        target_duration_s=args.duration,
+        fade_s=args.fade,
+        force=args.force,
+    )
+    print(
+        f"auto-hook extracted [{result.hook.start_s:.2f}s - {result.hook.end_s:.2f}s] "
+        f"(score {result.hook.score:.1f}) -> {result.output}"
+    )
+    return 0
+
+
 HANDLERS = {
     "stabilize": _run_stabilize,
     "camera-motion": _run_camera_motion,
@@ -1666,6 +1701,7 @@ HANDLERS = {
     "omni-export": _run_omni_export,
     "doctor-render": _run_doctor_render,
     "brand": _run_brand,
+    "auto-hook": _run_auto_hook,
 }
 
 
