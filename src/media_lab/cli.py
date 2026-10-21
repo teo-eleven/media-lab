@@ -35,11 +35,14 @@ from .recipes.filters import LOOKS, apply_look, apply_look_chain
 from .recipes.inpainting import inpaint_image
 from .recipes.matte_video import MODEL_CHOICES, matte_video
 from .recipes.narrator import generate_narration
+from .recipes.omni_export import SUPPORTED_OMNI_ASPECTS, omni_export
 from .recipes.photo import PHOTO_ASPECTS, PHOTO_LOOKS, edit_photo, process_photo_batch
 from .recipes.progress_bar import add_progress_bar
 from .recipes.proxy_preview import proxy_preview
 from .recipes.punch_zoom import punch_zoom
 from .recipes.punto_v23 import run_punto
+from .recipes.reelify import reelify
+from .recipes.render_doctor import diagnose_render
 from .recipes.scale_plate import estimate_plate_scale
 from .recipes.sfx import SFX_KINDS, SfxCue, add_sfx
 from .recipes.silence_trim import trim_silence
@@ -638,6 +641,70 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline.add_argument("--target-lufs", type=float, default=-16.0)
     pipeline.add_argument(
         "--fail-on-warning", action="store_true", help="Fail if the quality gate warns"
+    )
+
+    reelify_cmd = subcommands.add_parser(
+        "reelify",
+        help="All-in-one viral 9:16 short transformer (silence, audio mastering, subs)",
+    )
+    _add_io_arguments(reelify_cmd)
+    reelify_cmd.add_argument(
+        "--style", choices=STYLE_CHOICES, default="tiktok", help="Subtitle style preset"
+    )
+    reelify_cmd.add_argument(
+        "--no-subtitles", dest="burn_subtitles", action="store_false", help="Skip subtitle burning"
+    )
+    reelify_cmd.add_argument(
+        "--no-progress-bar", dest="progress_bar", action="store_false", help="Skip progress bar"
+    )
+    reelify_cmd.add_argument("--progress-color", default="yellow", help="Progress bar color")
+    reelify_cmd.add_argument(
+        "--no-zoom", dest="punch_zoom", action="store_false", help="Skip retention punch zoom"
+    )
+    reelify_cmd.add_argument("--noise-db", type=float, default=-32.0, help="Silence cutoff dB")
+    reelify_cmd.add_argument(
+        "--min-silence", type=float, default=0.4, help="Min silence duration in seconds"
+    )
+
+    omni_cmd = subcommands.add_parser(
+        "omni-export",
+        help="Multi-aspect campaign deliverables (9:16, 1:1, 16:9, 4:5) from single master",
+    )
+    omni_cmd.add_argument("input", help="Master video input")
+    omni_cmd.add_argument(
+        "-o", "--output-dir", required=True, help="Directory to save deliverables"
+    )
+    omni_cmd.add_argument(
+        "--aspects",
+        nargs="+",
+        choices=SUPPORTED_OMNI_ASPECTS,
+        default=list(SUPPORTED_OMNI_ASPECTS),
+        help="Aspect ratios to generate",
+    )
+    omni_cmd.add_argument(
+        "--mode",
+        choices=sorted(VALID_REFRAME_MODES),
+        default="smart",
+        help="Reframe tracking mode",
+    )
+    omni_cmd.add_argument("--force", action="store_true", help="Overwrite existing deliverables")
+
+    doctor_render_cmd = subcommands.add_parser(
+        "doctor-render",
+        help="Visual & technical quality audit on rendered media (black frames, freeze, clipping)",
+    )
+    doctor_render_cmd.add_argument("input", help="Rendered media file to audit")
+    doctor_render_cmd.add_argument(
+        "--frames", type=int, default=6, help="Sample frames to extract and test"
+    )
+    doctor_render_cmd.add_argument(
+        "--aspect", choices=sorted(ASPECT_RATIOS), help="Target aspect ratio expectation"
+    )
+    doctor_render_cmd.add_argument(
+        "--no-sheet",
+        dest="generate_sheet",
+        action="store_false",
+        help="Skip contact sheet generation",
     )
 
     return parser
@@ -1443,6 +1510,62 @@ def _run_studio(args: argparse.Namespace, config: Config, runner: KinoRunner) ->
     return 0
 
 
+def _run_reelify(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    ml_runner = MlRunner.from_config(config)
+    result = reelify(
+        args.input,
+        args.output,
+        config,
+        ml_runner,
+        subtitles_style=args.style,
+        burn_subtitles=args.burn_subtitles,
+        enable_punch_zoom=args.punch_zoom,
+        enable_progress_bar=args.progress_bar,
+        progress_bar_color=args.progress_color,
+        silence_threshold_db=args.noise_db,
+        min_silence_s=args.min_silence,
+        force=args.force,
+    )
+    print(f"reelify complete -> {result.output} ({result.media.width}x{result.media.height})")
+    print(f"  stages executed: {', '.join(result.stages_executed)}")
+    return 0
+
+
+def _run_omni_export(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    result = omni_export(
+        args.input,
+        args.output_dir,
+        config,
+        aspects=tuple(args.aspects),
+        mode=args.mode,
+        force=args.force,
+    )
+    print(f"omni-export complete -> {result.output_dir}")
+    for item in result.deliverables:
+        print(f"  [{item.aspect}] {item.path} ({item.media.width}x{item.media.height})")
+    return 0
+
+
+def _run_doctor_render(args: argparse.Namespace, config: Config, runner: KinoRunner) -> int:
+    report = diagnose_render(
+        args.input,
+        config,
+        sample_frames=args.frames,
+        generate_contact_sheet=args.generate_sheet,
+        expected_aspect=args.aspect,
+    )
+    status_icon = "✓" if report.passed else ("⚠" if report.has_warnings else "✗")
+    print(f"doctor-render: {report.source.name} [{status_icon} {report.overall_status}]")
+    for check in report.checks:
+        icon = "✓" if check.status == "PASS" else ("⚠" if check.status == "WARNING" else "✗")
+        print(f"  [{icon} {check.status}] {check.name}: {check.message}")
+        if check.recommendation:
+            print(f"      -> Recommendation: {check.recommendation}")
+    if report.contact_sheet:
+        print(f"  contact sheet: {report.contact_sheet}")
+    return 0 if report.passed or report.has_warnings else 1
+
+
 HANDLERS = {
     "stabilize": _run_stabilize,
     "camera-motion": _run_camera_motion,
@@ -1483,6 +1606,9 @@ HANDLERS = {
     "beat-sync": _run_beat_sync,
     "narrate": _run_narrate,
     "studio": _run_studio,
+    "reelify": _run_reelify,
+    "omni-export": _run_omni_export,
+    "doctor-render": _run_doctor_render,
 }
 
 
