@@ -290,3 +290,29 @@ def test_geometric_transforms_prompt(config: Config) -> None:
     assert spec_filters.video.contrast > 1.0
     assert spec_filters.video.blur > 0
     assert spec_filters.video.mute_audio is True
+
+
+def test_phase6_prompt_capabilities(config: Config) -> None:
+    # 1. Reel with kinetic subtitles and brand logo
+    spec_reel = interpret_prompt(
+        "Fă un reel cu subtitrări animate și logo",
+        "in/talk.mp4",
+        "out/reel.mp4",
+    )
+    assert spec_reel.video.aspect == "9:16"
+    assert spec_reel.video.subtitles.enabled is True
+    assert spec_reel.video.subtitles.kinetic is True
+    assert spec_reel.video.brand_logo is not None
+    assert spec_reel.video.progress_bar is True
+
+    # 2. Audit intent in chat_agent
+    src = _generate_synthetic_video(config.in_dir / "audit_target.mp4", config, duration=1.0)
+    audit_chat = chat_agent("verifică dacă randarea are erori", src, config)
+    assert audit_chat.intent == "audit"
+    assert "Audit Tehnic" in audit_chat.reply
+    assert "Status General:" in audit_chat.reply
+
+    # 3. Scout intent in chat_agent
+    scout_chat = chat_agent("scanează sunetele din bibliotecă", None, config)
+    assert scout_chat.intent == "scout"
+    assert "Biblioteca Locală de Resurse" in scout_chat.reply

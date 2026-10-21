@@ -7,6 +7,7 @@ and photo pipelines.
 
 from __future__ import annotations
 
+import contextlib
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +27,8 @@ from .llm import CognitiveBrain
 from .ml_runner import MlRunner
 from .probe import MediaInfo, probe
 from .recipes.edit import EditResult, run_edit_spec
+from .recipes.footage_scout import scout_library
+from .recipes.render_doctor import diagnose_render
 
 ROMANIAN_ENHANCE_KEYWORDS = {
     "curata vocea",
@@ -139,7 +142,10 @@ def interpret_prompt(
     aspect = "original"
     smart_reframe = False
 
-    if any(k in p_lower for k in ("9:16", "short", "reels", "tiktok", "vertical")):
+    is_reel_request = any(
+        k in p_lower for k in ("reel", "reels", "reelify", "viralizeaza", "viralizează")
+    )
+    if is_reel_request or any(k in p_lower for k in ("9:16", "short", "tiktok", "vertical")):
         aspect = "9:16"
         smart_reframe = True
     elif "1:1" in p_lower or "patrat" in p_lower or "pătrat" in p_lower or "square" in p_lower:
@@ -150,7 +156,9 @@ def interpret_prompt(
         smart_reframe = True
 
     # 2. Subtitles
-    subtitles_enabled = any(k in p_lower for k in ("subtitr", "subtitle", "caption"))
+    subtitles_enabled = is_reel_request or any(
+        k in p_lower for k in ("subtitr", "subtitle", "caption")
+    )
     sub_style = "tiktok"
     if "galben" in p_lower or "yellow" in p_lower:
         sub_style = "boxed_yellow"
@@ -158,6 +166,9 @@ def interpret_prompt(
         sub_style = "cinematic"
     elif "minimal" in p_lower:
         sub_style = "minimal"
+
+    sub_kinetic = any(k in p_lower for k in ("animat", "kinetic", "bounce", "pop-in", "dinamic"))
+    sub_emojis = any(k in p_lower for k in ("emoji", "emojis", "emoticoane"))
 
     # 3. Visual Look
     look: str | None = None
@@ -296,7 +307,7 @@ def interpret_prompt(
             pass
 
     # 11. Social Retention Progress Bar
-    has_progress_bar = any(
+    has_progress_bar = is_reel_request or any(
         k in p_lower
         for k in (
             "progress bar",
@@ -565,6 +576,36 @@ def interpret_prompt(
         if not music_track:
             music_track = "in/demo-music.m4a"
 
+    # 21. Corporate Brand Watermark
+    brand_logo: str | None = None
+    brand_pos = "top-right"
+    if any(k in p_lower for k in ("brand", "logo", "watermark", "sigla", "siglă")):
+        logo_match = re.search(r'logo\s+["\']([^"\']+)["\']', prompt, re.IGNORECASE)
+        brand_logo = logo_match.group(1) if logo_match else "in/demo-bg.png"
+        if "stanga" in p_lower or "left" in p_lower:
+            brand_pos = "top-left"
+        elif "jos" in p_lower or "bottom" in p_lower:
+            brand_pos = "bottom-right"
+
+    # 22. Viral Peak Acoustic Auto-Hook
+    auto_hook = any(
+        k in p_lower
+        for k in (
+            "hook",
+            "carlig",
+            "cârlig",
+            "cel mai bun moment",
+            "cele mai bune secunde",
+            "peak energy",
+            "taie la hook",
+        )
+    )
+    hook_dur = 30.0
+    hook_dur_match = re.search(r"\b(\d+)\s*(?:secunde|sec|s)\b", p_lower)
+    if hook_dur_match and auto_hook:
+        with contextlib.suppress(ValueError):
+            hook_dur = float(hook_dur_match.group(1))
+
     # 15. Actionable prompt fallback
     action_roots = (
         "fa",
@@ -636,7 +677,12 @@ def interpret_prompt(
         punch_zoom=punch_zoom,
         zoom_interval=zoom_interval,
         look=look,
-        subtitles=SubtitleEditSpec(enabled=subtitles_enabled, style=sub_style),
+        subtitles=SubtitleEditSpec(
+            enabled=subtitles_enabled,
+            style=sub_style,
+            kinetic=sub_kinetic,
+            emojis=sub_emojis,
+        ),
         typography=typo_spec,
         cutout=cutout,
         backdrop=backdrop,
@@ -661,6 +707,8 @@ def interpret_prompt(
         narrator_text=narrator_text,
         narrator_voice=narrator_voice,
         stabilize=stabilize,
+        brand_logo=brand_logo,
+        brand_position=brand_pos,
     )
 
     audio_spec = AudioEditSpec(
@@ -669,6 +717,8 @@ def interpret_prompt(
         silence_trim=silence_trim,
         music_track=music_track,
         sfx_cues=tuple(sfx_cues),
+        auto_hook=auto_hook,
+        hook_duration_s=hook_dur,
     )
 
     photo_spec = PhotoEditSpec(
@@ -794,6 +844,18 @@ def plan_prompt(
         ops.append(f"Narator vocal local TTS ({spec.video.narrator_voice or 'Ioana'})")
     if spec.audio.music_track:
         ops.append(f"Coloană sonoră cu ducking ({spec.audio.music_track})")
+    if spec.audio.auto_hook:
+        ops.append(
+            f"Extragere automată a hook-ului ({spec.audio.hook_duration_s:.0f}s vârf energie)"
+        )
+    if spec.video.subtitles.kinetic:
+        ops.append("Animație kinetic bounce pop-in pe subtitrări")
+    if spec.video.subtitles.emojis:
+        ops.append("Inserare automată de emoji-uri dinamice")
+    if spec.video.brand_logo:
+        ops.append(f"Watermark brand ({spec.video.brand_position})")
+    if any(k in prompt.lower() for k in ("omni", "toate formatele", "campanie")):
+        ops.append("Export campanie omnichannel (9:16, 1:1, 16:9, 4:5)")
 
     if not ops:
         ops.append("Conversie și verificare de bază")
@@ -1042,6 +1104,93 @@ def chat_agent(
                 "Aplică look cinematic, adaugă titlul 'Episodul 1' sus și bară de progres",
             ),
         )
+
+    # 4b. Render Doctor / Quality Audit
+    audit_triggers = {
+        "audit",
+        "erori",
+        "defecte",
+        "doctor",
+        "calitate",
+        "qc",
+        "frameio",
+        "verifica daca randarea are erori",
+        "verifică dacă randarea are erori",
+        "verifica randarea",
+        "verifică randarea",
+    }
+    if any(it in p_lower for it in audit_triggers):
+        if source_path:
+            try:
+                report = diagnose_render(source_path, config, sample_frames=6)
+                status_icon = "✅" if report.passed else ("⚠️" if report.has_warnings else "❌")
+                checks_md = "\n".join(
+                    f"- {c.name}: {c.status} ({c.message})" for c in report.checks
+                )
+                return ChatResponse(
+                    reply=(
+                        f"### 🩺 Audit Tehnic & Vizual (`{source_path.name}`):\n\n"
+                        f"**Status General:** {status_icon} **{report.overall_status}**\n\n"
+                        f"{checks_md}\n\n"
+                        f"Fiecare cadru a fost inspectat pentru niveluri de negru zdrobit, "
+                        f"cadre înghețate și clipping audio."
+                    ),
+                    intent="audit",
+                    suggested_prompts=(
+                        f"Repară defectele din {source_path.name}",
+                        f"Exportă pe toate formatele de social media din {source_path.name}",
+                    ),
+                )
+            except Exception as err:
+                return ChatResponse(
+                    reply=f"Eroare la auditul tehnic al clipului: {err}",
+                    intent="audit",
+                )
+        return ChatResponse(
+            reply=(
+                "Selectează un fișier din stânga pentru a rula auditul de calitate (black frames, "
+                "freezes, clipping audio, dimensiuni impare)!"
+            ),
+            intent="audit",
+        )
+
+    # 4c. Footage Scout / Library Search
+    scout_triggers = {
+        "cauta sunete",
+        "caută sunete",
+        "scaneaza sunetele",
+        "scanează sunetele",
+        "cauta b-roll",
+        "caută b-roll",
+        "resurse",
+        "librarie",
+        "librărie",
+        "scout",
+        "ce fundaluri",
+        "ce sunete",
+    }
+    if any(it in p_lower for it in scout_triggers):
+        try:
+            assets = scout_library([config.in_dir], config)
+            by_cat: dict[str, int] = {}
+            for a in assets:
+                by_cat[a.category] = by_cat.get(a.category, 0) + 1
+            cat_summary = ", ".join(f"**{cat}**: {cnt}" for cat, cnt in sorted(by_cat.items()))
+            return ChatResponse(
+                reply=(
+                    f"### 🔍 Biblioteca Locală de Resurse ({len(assets)} fișiere găsite):\n\n"
+                    f"{cat_summary}\n\n"
+                    "Poți folosi oricare dintre aceste cadre sau efecte direct în prompturi "
+                    "(ex: `adaugă whoosh la început`, `pune fundal din studio_neon`)."
+                ),
+                intent="scout",
+                suggested_prompts=(
+                    "Fă un reel cu subtitrări animate și whoosh la început",
+                    "Schimbă fundalul cu o placă video din bibliotecă",
+                ),
+            )
+        except Exception as err:
+            return ChatResponse(reply=f"Eroare la scanarea bibliotecii: {err}", intent="scout")
 
     # 5. Concrete Editing Request
     target_out = (

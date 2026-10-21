@@ -31,6 +31,8 @@ class AudioEditSpec:
     target_lufs: float = -16.0
     music_volume: float = 1.0
     sfx_cues: tuple[dict[str, Any], ...] = ()
+    auto_hook: bool = False
+    hook_duration_s: float = 30.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +40,8 @@ class SubtitleEditSpec:
     enabled: bool = False
     style: str = "tiktok"
     language: str | None = None
+    kinetic: bool = False
+    emojis: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +92,10 @@ class VideoEditSpec:
     stabilize: bool = False
     camera_motion: str | None = None
     camera_smoothing: float = 1.5
+    brand_logo: str | None = None
+    brand_position: str = "top-right"
+    brand_opacity: float = 0.85
+    brand_scale_pct: float = 12.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,6 +183,8 @@ def parse_edit_spec(source: str | Path | dict[str, Any]) -> EditSpec:
             enabled=bool(sub_dict.get("enabled", True)),
             style=sub_style,
             language=sub_dict.get("language"),
+            kinetic=bool(sub_dict.get("kinetic", False)),
+            emojis=bool(sub_dict.get("emojis", False)),
         )
     else:
         sub_spec = SubtitleEditSpec(enabled=False)
@@ -237,6 +247,10 @@ def parse_edit_spec(source: str | Path | dict[str, Any]) -> EditSpec:
         stabilize=bool(video_dict.get("stabilize", False)),
         camera_motion=video_dict.get("camera_motion"),
         camera_smoothing=float(video_dict.get("camera_smoothing", 1.5)),
+        brand_logo=video_dict.get("brand_logo"),
+        brand_position=str(video_dict.get("brand_position", "top-right")),
+        brand_opacity=float(video_dict.get("brand_opacity", 0.85)),
+        brand_scale_pct=float(video_dict.get("brand_scale_pct", 12.0)),
     )
 
     audio_dict = raw.get("audio", {})
@@ -258,6 +272,8 @@ def parse_edit_spec(source: str | Path | dict[str, Any]) -> EditSpec:
         target_lufs=float(audio_dict.get("target_lufs", -16.0)),
         music_volume=float(audio_dict.get("music_volume", 1.0)),
         sfx_cues=sfx_tuple,
+        auto_hook=bool(audio_dict.get("auto_hook", False)),
+        hook_duration_s=float(audio_dict.get("hook_duration_s", 30.0)),
     )
 
     photo_dict = raw.get("photo", {})

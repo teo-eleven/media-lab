@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 from typing import Any
 
 from .config import Config, load_config
@@ -18,12 +19,18 @@ from .ml_runner import MlRunner
 from .prompt_agent import execute_prompt
 from .recipes.assembly import assemble_clips
 from .recipes.audio_enhance import enhance_audio
+from .recipes.auto_hook import extract_viral_hook
 from .recipes.beat_sync import detect_beats
+from .recipes.brand_kit import apply_brand_watermark
 from .recipes.face_retouch import retouch_portrait
+from .recipes.footage_scout import scout_library
 from .recipes.inpainting import inpaint_image
 from .recipes.narrator import generate_narration
+from .recipes.omni_export import omni_export
 from .recipes.progress_bar import add_progress_bar
 from .recipes.punch_zoom import punch_zoom
+from .recipes.reelify import reelify
+from .recipes.render_doctor import auto_fix_render, diagnose_render
 from .recipes.silence_trim import trim_silence
 from .recipes.smart_reframe import smart_reframe
 from .recipes.speed import change_speed
@@ -363,6 +370,190 @@ TOOLS: list[dict[str, Any]] = [
             "required": ["text", "output"],
         },
     },
+    {
+        "name": "reelify_video",
+        "description": (
+            "One-click viral transformation of horizontal raw video into high-retention 9:16 "
+            "vertical Reel/Short with smart reframing, captions, ducking, and progress bar."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "Source video file"},
+                "output": {"type": "string", "description": "Destination 9:16 video path"},
+                "music_track": {
+                    "type": "string",
+                    "description": "Optional background music audio file",
+                },
+                "style": {
+                    "type": "string",
+                    "description": "Subtitle style (tiktok, boxed_yellow, etc.)",
+                    "default": "tiktok",
+                },
+                "profile": {
+                    "type": "string",
+                    "description": "Audio profile (podcast, radio, etc.)",
+                    "default": "podcast",
+                },
+                "force": {"type": "boolean", "default": False},
+            },
+            "required": ["source", "output"],
+        },
+    },
+    {
+        "name": "omni_export_campaign",
+        "description": (
+            "Multi-platform omnichannel social campaign exporter. Produces 9:16, 1:1, 16:9, "
+            "and 4:5 deliverables from a single master video."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "Source master video"},
+                "output_dir": {
+                    "type": "string",
+                    "description": "Destination directory for all aspect renders",
+                },
+                "force": {"type": "boolean", "default": False},
+            },
+            "required": ["source", "output_dir"],
+        },
+    },
+    {
+        "name": "diagnose_and_repair_render",
+        "description": (
+            "Technical and visual quality assurance auditor (black frames, freezes, clipping, "
+            "odd dimensions) with optional auto-fix repair."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "Rendered video file to inspect"},
+                "frames": {
+                    "type": "integer",
+                    "default": 6,
+                    "description": "Sample frames to inspect",
+                },
+                "aspect": {
+                    "type": "string",
+                    "description": "Expected aspect ratio (e.g. 9:16, 16:9)",
+                },
+                "auto_fix": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Automatically repair detected defects",
+                },
+                "output": {
+                    "type": "string",
+                    "description": "Repaired video path if auto_fix is true",
+                },
+                "force": {"type": "boolean", "default": False},
+            },
+            "required": ["source"],
+        },
+    },
+    {
+        "name": "apply_brand_watermark",
+        "description": (
+            "Overlay brand logo or watermark with custom opacity, position, and scale percentage."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "Source video file"},
+                "logo": {"type": "string", "description": "Logo image path (PNG recommended)"},
+                "output": {"type": "string", "description": "Output video file path"},
+                "position": {
+                    "type": "string",
+                    "default": "top-right",
+                    "description": (
+                        "Corner position (top-left, top-right, bottom-left, bottom-right)"
+                    ),
+                },
+                "opacity": {
+                    "type": "number",
+                    "default": 0.85,
+                    "description": "Logo opacity between 0.05 and 1.0",
+                },
+                "scale_pct": {
+                    "type": "number",
+                    "default": 12.0,
+                    "description": "Logo width as percentage of video width",
+                },
+                "force": {"type": "boolean", "default": False},
+            },
+            "required": ["source", "logo", "output"],
+        },
+    },
+    {
+        "name": "extract_viral_hook",
+        "description": (
+            "Detect acoustic energy peaks and extract the most engaging 30-60 second "
+            "hook clip from long-form video or audio."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "Input long-form video or audio"},
+                "output": {"type": "string", "description": "Destination extracted hook file"},
+                "duration": {
+                    "type": "number",
+                    "default": 30.0,
+                    "description": "Target hook duration in seconds",
+                },
+                "fade": {
+                    "type": "number",
+                    "default": 0.15,
+                    "description": "Audio fade duration in seconds",
+                },
+                "force": {"type": "boolean", "default": False},
+            },
+            "required": ["source", "output"],
+        },
+    },
+    {
+        "name": "scout_media_library",
+        "description": (
+            "Catalog and search local asset library for B-Roll cutaways, background plates, or SFX."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "directories": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Directories to search (default: in/)",
+                },
+                "type": {
+                    "type": "string",
+                    "description": "Media type (video, audio, image)",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Category (sfx, plate_video, broll, plate_still)",
+                },
+                "query": {"type": "string", "description": "Search keyword"},
+                "vertical": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Only vertical 9:16 media",
+                },
+                "horizontal": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Only horizontal 16:9 media",
+                },
+                "min_duration": {
+                    "type": "number",
+                    "description": "Minimum duration in seconds",
+                },
+                "max_duration": {
+                    "type": "number",
+                    "description": "Maximum duration in seconds",
+                },
+            },
+        },
+    },
 ]
 
 
@@ -602,6 +793,112 @@ def dispatch_tool(name: str, arguments: dict[str, Any], config: Config) -> dict[
                 "height": res_cm.media.height,
             },
         }
+
+    if name == "reelify_video":
+        res_rf = reelify(
+            arguments["source"],
+            arguments["output"],
+            config,
+            ml_runner,
+            subtitles_style=arguments.get("style", "tiktok"),
+            force=bool(arguments.get("force", False)),
+        )
+        return {
+            "output": str(res_rf.output),
+            "media": {
+                "duration_s": res_rf.media.duration_s,
+                "width": res_rf.media.width,
+                "height": res_rf.media.height,
+            },
+            "stages_executed": list(res_rf.stages_executed),
+        }
+
+    if name == "omni_export_campaign":
+        res_om = omni_export(
+            arguments["source"],
+            arguments["output_dir"],
+            config,
+            force=bool(arguments.get("force", False)),
+        )
+        return {
+            "output_dir": str(res_om.output_dir),
+            "deliverables": {d.aspect: str(d.path) for d in res_om.deliverables},
+        }
+
+    if name == "diagnose_and_repair_render":
+        doc_report = diagnose_render(
+            arguments["source"],
+            config,
+            sample_frames=int(arguments.get("frames", 6)),
+            expected_aspect=arguments.get("aspect"),
+        )
+        if arguments.get("auto_fix", False) and arguments.get("output"):
+            res_fix = auto_fix_render(
+                arguments["source"],
+                arguments["output"],
+                doc_report,
+                config,
+                force=bool(arguments.get("force", False)),
+            )
+            return {
+                "fixed_output": str(res_fix.output),
+                "fixes_applied": list(res_fix.fixes_applied),
+                "initial_report": doc_report.to_dict(),
+            }
+        return {"report": doc_report.to_dict()}
+
+    if name == "apply_brand_watermark":
+        res_br = apply_brand_watermark(
+            arguments["source"],
+            arguments["logo"],
+            arguments["output"],
+            config,
+            position=arguments.get("position", "top-right"),
+            opacity=float(arguments.get("opacity", 0.85)),
+            scale_pct=float(arguments.get("scale_pct", 12.0)),
+            force=bool(arguments.get("force", False)),
+        )
+        return {
+            "output": str(res_br.output),
+            "position": res_br.position,
+            "opacity": res_br.opacity,
+        }
+
+    if name == "extract_viral_hook":
+        res_hk = extract_viral_hook(
+            arguments["source"],
+            arguments["output"],
+            config,
+            target_duration_s=float(arguments.get("duration", 30.0)),
+            fade_s=float(arguments.get("fade", 0.15)),
+            force=bool(arguments.get("force", False)),
+        )
+        return {
+            "output": str(res_hk.output),
+            "start_s": res_hk.hook.start_s,
+            "end_s": res_hk.hook.end_s,
+            "score": res_hk.hook.score,
+        }
+
+    if name == "scout_media_library":
+        raw_dirs = arguments.get("directories")
+        dirs = [Path(d) for d in raw_dirs] if raw_dirs else [config.in_dir]
+        orientation = (
+            "vertical"
+            if arguments.get("vertical")
+            else ("horizontal" if arguments.get("horizontal") else None)
+        )
+        assets = scout_library(
+            directories=dirs,
+            config=config,
+            media_type=arguments.get("type"),
+            category=arguments.get("category"),
+            query=arguments.get("query"),
+            orientation=orientation,
+            min_duration=arguments.get("min_duration"),
+            max_duration=arguments.get("max_duration"),
+        )
+        return {"assets": [a.to_dict() for a in assets], "count": len(assets)}
 
     raise MediaLabError(f"unknown tool {name!r}")
 

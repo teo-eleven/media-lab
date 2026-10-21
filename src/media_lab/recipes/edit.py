@@ -22,7 +22,9 @@ from ..paths import ensure_readable_source, ensure_writable_output, work_directo
 from ..probe import MediaInfo, probe
 from ..recipes.audio_bed import add_music_bed
 from ..recipes.audio_enhance import enhance_audio
+from ..recipes.auto_hook import extract_viral_hook
 from ..recipes.backdrop import place_on_backdrop
+from ..recipes.brand_kit import apply_brand_watermark
 from ..recipes.broll import BrollCut, insert_broll
 from ..recipes.camera_motion import apply_camera_motion
 from ..recipes.face_retouch import retouch_portrait
@@ -257,6 +259,23 @@ def run_edit_spec(
         stabilize_video(current_clip, stabilized_video, config, force=True)
         current_clip = stabilized_video
         steps_executed.append("vidstab_stabilization")
+
+    # 0c. Viral Auto-Hook Extraction (peak energy slice)
+    if spec.audio.auto_hook:
+        clip_info = probe(current_clip, config)
+        if clip_info.has_audio:
+            hook_video = work / "step0c_hook.mp4"
+            extract_viral_hook(
+                current_clip,
+                hook_video,
+                config,
+                target_duration_s=spec.audio.hook_duration_s,
+                force=True,
+            )
+            current_clip = hook_video
+            steps_executed.append("auto_hook")
+        else:
+            steps_executed.append("auto_hook_skipped (no audio)")
 
     # 1. Silence Jump-Cutting
     if spec.audio.silence_trim:
@@ -511,6 +530,11 @@ def run_edit_spec(
         clip_info = probe(current_clip, config)
         if clip_info.has_audio:
             subs_video = work / "step9_subtitled.mp4"
+            sub_kwargs: dict[str, Any] = {}
+            if spec.video.subtitles.kinetic:
+                sub_kwargs["kinetic"] = True
+            if spec.video.subtitles.emojis:
+                sub_kwargs["emojis"] = True
             generate_subtitles(
                 current_clip,
                 subs_video,
@@ -520,6 +544,7 @@ def run_edit_spec(
                 language=spec.video.subtitles.language,
                 burn=True,
                 force=True,
+                **sub_kwargs,
             )
             current_clip = subs_video
             steps_executed.append(f"subtitles_{spec.video.subtitles.style}")
@@ -569,6 +594,26 @@ def run_edit_spec(
         upscale(current_clip, upscaled_video, config, ml_runner, scale=scale, force=True)
         current_clip = upscaled_video
         steps_executed.append(f"realesrgan_upscale_{scale}x")
+
+    # 12c. Brand Watermark Overlay
+    if spec.video.brand_logo:
+        logo_p = Path(spec.video.brand_logo)
+        if not logo_p.is_absolute():
+            logo_p = (config.root / logo_p).resolve()
+        if logo_p.is_file():
+            brand_video = work / "step12c_brand.mp4"
+            apply_brand_watermark(
+                current_clip,
+                logo_p,
+                brand_video,
+                config,
+                position=spec.video.brand_position,
+                opacity=spec.video.brand_opacity,
+                scale_pct=spec.video.brand_scale_pct,
+                force=True,
+            )
+            current_clip = brand_video
+            steps_executed.append("brand_watermark")
 
     # 13. Background music mixing with ducking
     music_handled = False

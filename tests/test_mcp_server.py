@@ -89,6 +89,12 @@ def test_mcp_tools_list(config: Config) -> None:
     assert "smart_reframe" in tool_names
     assert "punch_zoom" in tool_names
     assert "inpaint_image" in tool_names
+    assert "reelify_video" in tool_names
+    assert "omni_export_campaign" in tool_names
+    assert "diagnose_and_repair_render" in tool_names
+    assert "apply_brand_watermark" in tool_names
+    assert "extract_viral_hook" in tool_names
+    assert "scout_media_library" in tool_names
 
 
 def test_mcp_tools_call_inspect(config: Config) -> None:
@@ -153,6 +159,72 @@ def test_mcp_tools_call_execute_prompt(config: Config) -> None:
     assert resp is not None
     assert resp["result"]["isError"] is False
     assert out.is_file()
+
+
+def test_mcp_tools_call_phase6_scout_and_brand(config: Config) -> None:
+    vid = _generate_synthetic_video(config.in_dir / "brand_in.mp4", config)
+    logo = _generate_synthetic_image(config.in_dir / "brand_logo.png")
+    branded_out = config.out_dir / "branded_mcp.mp4"
+
+    # Test apply_brand_watermark
+    brand_req = {
+        "jsonrpc": "2.0",
+        "id": 10,
+        "method": "tools/call",
+        "params": {
+            "name": "apply_brand_watermark",
+            "arguments": {
+                "source": str(vid),
+                "logo": str(logo),
+                "output": str(branded_out),
+                "position": "top-right",
+                "force": True,
+            },
+        },
+    }
+    brand_resp = handle_rpc_request(brand_req, config)
+    assert brand_resp is not None
+    assert brand_resp["result"]["isError"] is False
+    assert branded_out.is_file()
+
+    # Test scout_media_library
+    scout_req = {
+        "jsonrpc": "2.0",
+        "id": 11,
+        "method": "tools/call",
+        "params": {
+            "name": "scout_media_library",
+            "arguments": {
+                "directories": [str(config.in_dir)],
+                "query": "brand",
+            },
+        },
+    }
+    scout_resp = handle_rpc_request(scout_req, config)
+    assert scout_resp is not None
+    assert scout_resp["result"]["isError"] is False
+    scout_data = json.loads(scout_resp["result"]["content"][0]["text"])
+    assert scout_data["count"] >= 2
+
+    # Test diagnose_and_repair_render
+    doc_req = {
+        "jsonrpc": "2.0",
+        "id": 12,
+        "method": "tools/call",
+        "params": {
+            "name": "diagnose_and_repair_render",
+            "arguments": {
+                "source": str(branded_out),
+                "frames": 2,
+            },
+        },
+    }
+    doc_resp = handle_rpc_request(doc_req, config)
+    assert doc_resp is not None
+    assert doc_resp["result"]["isError"] is False
+    doc_data = json.loads(doc_resp["result"]["content"][0]["text"])
+    assert "report" in doc_data
+    assert doc_data["report"]["overall_status"] in ("PASS", "WARNING")
 
 
 def test_mcp_unknown_method_and_error(config: Config) -> None:

@@ -210,6 +210,43 @@ def test_studio_server_endpoints(config: Config) -> None:
             rst_res = json.loads(resp.read().decode("utf-8"))
             assert rst_res["status"] == "ok"
 
+        # 12. Test GET /api/scout
+        with urllib.request.urlopen(f"{base_url}/api/scout?type=video") as resp:
+            assert resp.status == 200
+            scout_res = json.loads(resp.read().decode("utf-8"))
+            assert scout_res["status"] == "ok"
+            assert "assets" in scout_res
+            assert scout_res["count"] >= 1
+
+        # 13. Test POST /api/doctor
+        post_doc = json.dumps({"source": f"in/{src_file.name}", "auto_fix": True}).encode("utf-8")
+        req_doc = urllib.request.Request(
+            f"{base_url}/api/doctor",
+            data=post_doc,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req_doc) as resp:
+            assert resp.status == 200
+            doc_res = json.loads(resp.read().decode("utf-8"))
+            assert doc_res["status"] == "ok"
+            assert "report" in doc_res
+            assert doc_res["report"]["overall_status"] in ("PASS", "WARNING", "FAIL")
+            assert doc_res["fixed_url"] is not None
+
+        # 14. Test POST /api/omni-export
+        post_omni = json.dumps({"source": f"in/{src_file.name}"}).encode("utf-8")
+        req_omni = urllib.request.Request(
+            f"{base_url}/api/omni-export",
+            data=post_omni,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req_omni) as resp:
+            assert resp.status == 200
+            omni_res = json.loads(resp.read().decode("utf-8"))
+            assert omni_res["status"] == "ok"
+            assert "deliverables" in omni_res
+            assert len(omni_res["deliverables"]) == 4
+
     finally:
         server.shutdown()
         server.server_close()

@@ -351,6 +351,28 @@
         <div class="meta-row"><span class="meta-label">Dimensiune</span><span class="meta-value" id="metaSize">-</span></div>
         <div class="meta-row"><span class="meta-label">Folder</span><span class="meta-value" id="metaFolder">-</span></div>
       </div>
+
+      <!-- Quick Production Suite (Faza 6) -->
+      <div style="padding: 14px 16px; border-top: 1px solid var(--border); background: var(--bg-card); margin: 12px; border-radius: 8px;">
+        <div style="font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 10px; font-weight: 700; display: flex; align-items: center; justify-content: space-between;">
+          <span>⚡ Faza 6 Quick Tools</span>
+          <span style="font-size: 0.7rem; color: var(--accent);">Local Engine</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <button class="btn btn-primary" style="justify-content: center; font-size: 0.82rem; padding: 7px 10px;" onclick="runQuickReelify()" title="Transformă automat clipul într-un Reel vertical 9:16 cu subtitrări animate și bare de retenție">
+            ⚡ One-Click Reelify
+          </button>
+          <button class="btn secondary" style="justify-content: center; font-size: 0.82rem; padding: 7px 10px;" onclick="runQuickOmniExport()" title="Exportă pe 4 formate simultan (9:16, 1:1, 16:9, 4:5)">
+            🌐 Omni Campaign Export
+          </button>
+          <button class="btn secondary" style="justify-content: center; font-size: 0.82rem; padding: 7px 10px;" onclick="runQuickDoctorAudit()" title="Verifică defectele tehnice și vizuale ale randării">
+            🩺 Run Doctor Audit
+          </button>
+          <button class="btn secondary" style="justify-content: center; font-size: 0.82rem; padding: 7px 10px;" onclick="runQuickScout()" title="Catalogează resursele locale (B-Roll, SFX, background plates)">
+            🔍 Scout Media Library
+          </button>
+        </div>
+      </div>
     </aside>
   </div>
 
@@ -707,6 +729,156 @@
       } catch (e) {
         console.error("Reset error:", e);
       }
+    }
+
+    async function runQuickReelify() {
+      if (!currentSelectedFile) {
+        alert("Te rog selectează mai întâi un clip video din stânga!");
+        return;
+      }
+      const messagesArea = document.getElementById('messagesArea');
+      const statusMsg = document.createElement('div');
+      statusMsg.className = 'message agent';
+      statusMsg.innerHTML = `<em>⚡ Reelify în execuție pentru <code>${escapeHtml(currentSelectedFile.name)}</code>... Se taie tăcerile, se reîncadrează 9:16 și se generează subtitrările animate...</em>`;
+      messagesArea.appendChild(statusMsg);
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+
+      try {
+        const res = await fetch('/api/reelify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: `${currentSelectedFile.folder}/${currentSelectedFile.name}` })
+        });
+        const data = await res.json();
+        if (data.error) {
+          statusMsg.innerHTML = `<span style="color: var(--danger);">❌ Eroare Reelify: ${escapeHtml(data.error)}</span>`;
+          return;
+        }
+        let stagesHtml = (data.stages || []).map(s => `<div class="plan-step"><span class="step-badge">✓</span><span>${escapeHtml(s)}</span></div>`).join('');
+        statusMsg.innerHTML = `
+          <div>🎉 <strong>Reelify Finalizat!</strong> Clipul a fost transformat în format vertical 9:16 pentru social media.</div>
+          <div class="plan-card" style="margin-top: 10px;">${stagesHtml}</div>
+          <div style="margin-top: 10px; font-weight: 600;">Fișier generat: <code style="color: var(--success);">${escapeHtml(data.output)}</code></div>
+        `;
+        await loadFiles();
+        selectFile('out', { name: data.output, type: 'video', size_human: 'Reelify' }, null);
+      } catch (err) {
+        statusMsg.innerHTML = `<span style="color: var(--danger);">Eroare rețea: ${escapeHtml(err.message)}</span>`;
+      }
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+    }
+
+    async function runQuickOmniExport() {
+      if (!currentSelectedFile) {
+        alert("Te rog selectează mai întâi un clip video din stânga!");
+        return;
+      }
+      const messagesArea = document.getElementById('messagesArea');
+      const statusMsg = document.createElement('div');
+      statusMsg.className = 'message agent';
+      statusMsg.innerHTML = `<em>🌐 Omni Campaign Export în execuție pentru <code>${escapeHtml(currentSelectedFile.name)}</code>... Se generează versiunile 9:16, 1:1, 16:9 și 4:5...</em>`;
+      messagesArea.appendChild(statusMsg);
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+
+      try {
+        const res = await fetch('/api/omni-export', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: `${currentSelectedFile.folder}/${currentSelectedFile.name}` })
+        });
+        const data = await res.json();
+        if (data.error) {
+          statusMsg.innerHTML = `<span style="color: var(--danger);">❌ Eroare Omni Export: ${escapeHtml(data.error)}</span>`;
+          return;
+        }
+        let delivHtml = (data.deliverables || []).map(d =>
+          `<div class="plan-step"><span class="step-badge">${escapeHtml(d.aspect)}</span><span>${escapeHtml(d.name)} (${d.width}x${d.height})</span></div>`
+        ).join('');
+        statusMsg.innerHTML = `
+          <div>🎉 <strong>Omni Campaign Export Finalizat!</strong> Toate cele 4 formate sociale au fost randate:</div>
+          <div class="plan-card" style="margin-top: 10px;">${delivHtml}</div>
+          <div style="margin-top: 10px;">Folder campanie: <code>out/${escapeHtml(data.campaign_dir)}</code></div>
+        `;
+        await loadFiles();
+      } catch (err) {
+        statusMsg.innerHTML = `<span style="color: var(--danger);">Eroare rețea: ${escapeHtml(err.message)}</span>`;
+      }
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+    }
+
+    async function runQuickDoctorAudit() {
+      if (!currentSelectedFile) {
+        alert("Te rog selectează mai întâi un clip video din stânga!");
+        return;
+      }
+      const messagesArea = document.getElementById('messagesArea');
+      const statusMsg = document.createElement('div');
+      statusMsg.className = 'message agent';
+      statusMsg.innerHTML = `<em>🩺 Doctor Audit în curs pentru <code>${escapeHtml(currentSelectedFile.name)}</code>... Se inspectează cadrele și fluxul audio...</em>`;
+      messagesArea.appendChild(statusMsg);
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+
+      try {
+        const res = await fetch('/api/doctor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: `${currentSelectedFile.folder}/${currentSelectedFile.name}` })
+        });
+        const data = await res.json();
+        if (data.error) {
+          statusMsg.innerHTML = `<span style="color: var(--danger);">❌ Eroare Doctor: ${escapeHtml(data.error)}</span>`;
+          return;
+        }
+        const rep = data.report;
+        const icon = rep.overall_status === 'PASS' ? '✅' : (rep.overall_status === 'WARNING' ? '⚠️' : '❌');
+        let checksHtml = (rep.checks || []).map(c =>
+          `<div class="plan-step"><span class="step-badge">${c.status === 'PASS' ? '✓' : '!'}</span><span><strong>${escapeHtml(c.name)}</strong>: ${escapeHtml(c.status)} - ${escapeHtml(c.message)}</span></div>`
+        ).join('');
+
+        let sheetHtml = '';
+        if (data.contact_sheet_url) {
+          sheetHtml = `<div style="margin-top: 10px;"><a href="${data.contact_sheet_url}" target="_blank" style="color: var(--accent); font-weight: 600;">🖼️ Deschide Contact Sheet QC</a></div>`;
+        }
+
+        statusMsg.innerHTML = `
+          <div>${icon} <strong>Raport Audit Render Doctor:</strong> <code>${escapeHtml(rep.overall_status)}</code></div>
+          <div class="plan-card" style="margin-top: 10px;">${checksHtml}</div>
+          ${sheetHtml}
+        `;
+      } catch (err) {
+        statusMsg.innerHTML = `<span style="color: var(--danger);">Eroare rețea: ${escapeHtml(err.message)}</span>`;
+      }
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+    }
+
+    async function runQuickScout() {
+      const messagesArea = document.getElementById('messagesArea');
+      const statusMsg = document.createElement('div');
+      statusMsg.className = 'message agent';
+      statusMsg.innerHTML = `<em>🔍 Se scanează biblioteca locală de resurse...</em>`;
+      messagesArea.appendChild(statusMsg);
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+
+      try {
+        const res = await fetch('/api/scout');
+        const data = await res.json();
+        if (data.error) {
+          statusMsg.innerHTML = `<span style="color: var(--danger);">❌ Eroare Scout: ${escapeHtml(data.error)}</span>`;
+          return;
+        }
+        let itemsHtml = (data.assets || []).slice(0, 8).map(a =>
+          `<div class="plan-step"><span class="step-badge">${escapeHtml(a.category)}</span><span><strong>${escapeHtml(a.name)}</strong> (${escapeHtml(a.media_type)}, ${a.duration_s ? a.duration_s.toFixed(1) + 's' : 'still'})</span></div>`
+        ).join('');
+
+        statusMsg.innerHTML = `
+          <div>📦 <strong>Biblioteca de Resurse Media Lab:</strong> ${data.count} fișiere indexate</div>
+          <div class="plan-card" style="margin-top: 10px;">${itemsHtml}</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 8px;">Găsite categorii: plate_video, plate_still, broll, sfx, audio.</div>
+        `;
+      } catch (err) {
+        statusMsg.innerHTML = `<span style="color: var(--danger);">Eroare rețea: ${escapeHtml(err.message)}</span>`;
+      }
+      messagesArea.scrollTop = messagesArea.scrollHeight;
     }
 
     window.onload = async () => {

@@ -25,6 +25,10 @@ from .kino import KinoRunner
 from .llm import LLMConfig, spec_to_dict
 from .ml_runner import MlRunner
 from .prompt_agent import chat_agent, execute_prompt
+from .recipes.footage_scout import scout_library
+from .recipes.omni_export import omni_export
+from .recipes.reelify import reelify
+from .recipes.render_doctor import auto_fix_render, diagnose_render
 
 STATIC_DIR: Path = Path(__file__).parent / "static"
 
@@ -74,6 +78,10 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
             self._handle_api_settings_get()
             return
 
+        if path == "/api/scout":
+            self._handle_api_scout()
+            return
+
         if path.startswith("/media/"):
             self._handle_media_stream(path[len("/media/") :])
             return
@@ -92,6 +100,18 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
 
         if url.path == "/api/settings":
             self._handle_api_settings_post()
+            return
+
+        if url.path == "/api/reelify":
+            self._handle_api_reelify()
+            return
+
+        if url.path == "/api/omni-export":
+            self._handle_api_omni_export()
+            return
+
+        if url.path == "/api/doctor":
+            self._handle_api_doctor()
             return
 
         self.send_error(HTTPStatus.NOT_FOUND, "Endpoint not found")
@@ -463,6 +483,182 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
                 },
             }
         )
+
+    def _resolve_media_path(self, path_str: str) -> Path | None:
+        p = Path(path_str)
+        if p.is_absolute() and p.is_file():
+            return p
+        for base in (self.config.in_dir, self.config.out_dir, self.config.work_dir):
+            candidate = (base / p).resolve()
+            if candidate.is_file():
+                return candidate
+            candidate_no_folder = (base / p.name).resolve()
+            if candidate_no_folder.is_file():
+                return candidate_no_folder
+        return None
+
+    def _handle_api_reelify(self) -> None:
+        content_length = int(self.headers.get("Content-Length", 0))
+        post_data = self.rfile.read(content_length)
+        try:
+            payload = json.loads(post_data.decode("utf-8"))
+        except Exception as err:
+            self._send_json_response({"error": f"Invalid JSON payload: {err}"}, status=400)
+            return
+
+        src_name = payload.get("source")
+        if not src_name:
+            self._send_json_response({"error": "Missing source parameter"}, status=400)
+            return
+
+        src_path = self._resolve_media_path(src_name)
+        if not src_path or not src_path.is_file():
+            self._send_json_response({"error": f"Source file not found: {src_name}"}, status=404)
+            return
+
+        out_name = payload.get("output") or f"reel_{src_path.stem}.mp4"
+        out_path = self.config.out_dir / out_name
+
+        try:
+            result = reelify(
+                src_path,
+                out_path,
+                self.config,
+                self.ml_runner,
+                subtitles_style=payload.get("style", "tiktok"),
+                force=True,
+            )
+            self._send_json_response(
+                {
+                    "status": "ok",
+                    "output": str(result.output.name),
+                    "url": f"/media/out/{result.output.name}",
+                    "stages": list(result.stages_executed),
+                    "subtitles_burned": result.subtitles_burned,
+                }
+            )
+        except Exception as err:
+            self._send_json_response({"error": f"Reelify failed: {err}"}, status=500)
+
+    def _handle_api_omni_export(self) -> None:
+        content_length = int(self.headers.get("Content-Length", 0))
+        post_data = self.rfile.read(content_length)
+        try:
+            payload = json.loads(post_data.decode("utf-8"))
+        except Exception as err:
+            self._send_json_response({"error": f"Invalid JSON payload: {err}"}, status=400)
+            return
+
+        src_name = payload.get("source")
+        if not src_name:
+            self._send_json_response({"error": "Missing source parameter"}, status=400)
+            return
+
+        src_path = self._resolve_media_path(src_name)
+        if not src_path or not src_path.is_file():
+            self._send_json_response({"error": f"Source file not found: {src_name}"}, status=404)
+            return
+
+        camp_dir = self.config.out_dir / f"campaign_{src_path.stem}"
+        try:
+            res_om = omni_export(
+                src_path,
+                camp_dir,
+                self.config,
+                force=True,
+            )
+            deliverables_data = [
+                {
+                    "aspect": d.aspect,
+                    "name": d.path.name,
+                    "url": f"/media/out/{camp_dir.name}/{d.path.name}",
+                    "width": d.media.width,
+                    "height": d.media.height,
+                }
+                for d in res_om.deliverables
+            ]
+            self._send_json_response(
+                {
+                    "status": "ok",
+                    "campaign_dir": camp_dir.name,
+                    "deliverables": deliverables_data,
+                }
+            )
+        except Exception as err:
+            self._send_json_response({"error": f"Omni-export failed: {err}"}, status=500)
+
+    def _handle_api_doctor(self) -> None:
+        content_length = int(self.headers.get("Content-Length", 0))
+        post_data = self.rfile.read(content_length)
+        try:
+            payload = json.loads(post_data.decode("utf-8"))
+        except Exception as err:
+            self._send_json_response({"error": f"Invalid JSON payload: {err}"}, status=400)
+            return
+
+        src_name = payload.get("source")
+        if not src_name:
+            self._send_json_response({"error": "Missing source parameter"}, status=400)
+            return
+
+        src_path = self._resolve_media_path(src_name)
+        if not src_path or not src_path.is_file():
+            self._send_json_response({"error": f"Source file not found: {src_name}"}, status=404)
+            return
+
+        auto_fix = bool(payload.get("auto_fix", False))
+        try:
+            report = diagnose_render(src_path, self.config, sample_frames=6)
+            contact_sheet_url = None
+            if report.contact_sheet and report.contact_sheet.is_file():
+                contact_sheet_url = f"/media/work/{report.contact_sheet.name}"
+
+            fixed_url = None
+            fixes_applied = []
+            if auto_fix:
+                fixed_out = self.config.out_dir / f"fixed_{src_path.name}"
+                fix_res = auto_fix_render(src_path, fixed_out, report, self.config, force=True)
+                fixed_url = f"/media/out/{fixed_out.name}"
+                fixes_applied = list(fix_res.fixes_applied)
+
+            self._send_json_response(
+                {
+                    "status": "ok",
+                    "report": report.to_dict(),
+                    "contact_sheet_url": contact_sheet_url,
+                    "fixed_url": fixed_url,
+                    "fixes_applied": fixes_applied,
+                }
+            )
+        except Exception as err:
+            self._send_json_response({"error": f"Doctor audit failed: {err}"}, status=500)
+
+    def _handle_api_scout(self) -> None:
+        url = urllib.parse.urlparse(self.path)
+        params = urllib.parse.parse_qs(url.query)
+        query = params.get("query", [None])[0]
+        m_type = params.get("type", [None])[0]
+        category = params.get("category", [None])[0]
+        orientation = params.get("orientation", [None])[0]
+
+        try:
+            assets = scout_library(
+                directories=[self.config.in_dir],
+                config=self.config,
+                media_type=m_type,
+                category=category,
+                query=query,
+                orientation=orientation,
+            )
+            self._send_json_response(
+                {
+                    "status": "ok",
+                    "count": len(assets),
+                    "assets": [a.to_dict() for a in assets],
+                }
+            )
+        except Exception as err:
+            self._send_json_response({"error": f"Scout failed: {err}"}, status=500)
 
 
 def create_server(
