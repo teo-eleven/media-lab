@@ -45,9 +45,7 @@ def long_synthetic_video(tmp_path: Path, config: Config) -> Path:
     return out
 
 
-def test_detect_viral_hook_locates_energy_peak(
-    long_synthetic_video: Path, config: Config
-) -> None:
+def test_detect_viral_hook_locates_energy_peak(long_synthetic_video: Path, config: Config) -> None:
     hook = detect_viral_hook(
         long_synthetic_video,
         config,

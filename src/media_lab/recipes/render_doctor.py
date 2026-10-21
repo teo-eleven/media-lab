@@ -120,8 +120,7 @@ def diagnose_render(
                     name="Even Dimensions",
                     status="FAIL",
                     message=(
-                        f"Odd dimensions ({media.width}x{media.height}) "
-                        "cause encoder corruption."
+                        f"Odd dimensions ({media.width}x{media.height}) cause encoder corruption."
                     ),
                     recommendation="Ensure dimensions are divisible by 2 using scale filter.",
                 )

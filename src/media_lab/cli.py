@@ -34,6 +34,7 @@ from .recipes.cutout import DEVICE_CHOICES, QUALITY_CHOICES, cut_out_person
 from .recipes.edit import run_edit_spec
 from .recipes.face_retouch import retouch_portrait
 from .recipes.filters import LOOKS, apply_look, apply_look_chain
+from .recipes.footage_scout import format_scouted_table, scout_library
 from .recipes.inpainting import inpaint_image
 from .recipes.matte_video import MODEL_CHOICES, matte_video
 from .recipes.narrator import generate_narration
@@ -779,6 +780,35 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.15,
         help="Fade-in and fade-out duration in seconds (default: 0.15)",
+    )
+
+    scout_cmd = subcommands.add_parser(
+        "scout",
+        help="Search and catalog local library media (B-Roll, background plates, SFX)",
+    )
+    scout_cmd.add_argument(
+        "--dir",
+        action="append",
+        dest="dirs",
+        help="Directory to scan (can specify multiple, default: in/)",
+    )
+    scout_cmd.add_argument(
+        "--type", choices=["video", "audio", "image"], help="Filter by media type"
+    )
+    scout_cmd.add_argument(
+        "--category", help="Filter by category (e.g. sfx, plate_video, broll, plate_still)"
+    )
+    scout_cmd.add_argument("-q", "--query", help="Text search in file name or path")
+    scout_cmd.add_argument(
+        "--vertical", action="store_true", help="Filter for vertical 9:16 media only"
+    )
+    scout_cmd.add_argument(
+        "--horizontal", action="store_true", help="Filter for horizontal 16:9 media only"
+    )
+    scout_cmd.add_argument("--min-duration", type=float, help="Minimum duration in seconds")
+    scout_cmd.add_argument("--max-duration", type=float, help="Maximum duration in seconds")
+    scout_cmd.add_argument(
+        "--json", dest="json_output", action="store_true", help="Output JSON array of metadata"
     )
 
     return parser
@@ -1650,10 +1680,8 @@ def _run_doctor_render(args: argparse.Namespace, config: Config, runner: KinoRun
         if not args.output:
             print("error: --auto-fix requires -o/--output path", file=sys.stderr)
             return 1
-        fix_res = auto_fix_render(
-            args.input, args.output, report, config, force=args.force
-        )
-        fixes_str = ', '.join(fix_res.fixes_applied) or 're-encoded'
+        fix_res = auto_fix_render(args.input, args.output, report, config, force=args.force)
+        fixes_str = ", ".join(fix_res.fixes_applied) or "re-encoded"
         print(f"  auto-fix applied ({fixes_str}) -> {fix_res.output}")
 
     return 0 if report.passed or report.has_warnings else 1
@@ -1688,6 +1716,28 @@ def _run_auto_hook(args: argparse.Namespace, config: Config, _runner: KinoRunner
         f"auto-hook extracted [{result.hook.start_s:.2f}s - {result.hook.end_s:.2f}s] "
         f"(score {result.hook.score:.1f}) -> {result.output}"
     )
+    return 0
+
+
+def _run_scout(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    dirs = [Path(d) for d in args.dirs] if args.dirs else [config.in_dir]
+    orientation = "vertical" if args.vertical else ("horizontal" if args.horizontal else None)
+    assets = scout_library(
+        directories=dirs,
+        config=config,
+        media_type=args.type,
+        category=args.category,
+        query=args.query,
+        orientation=orientation,
+        min_duration=args.min_duration,
+        max_duration=args.max_duration,
+    )
+    if args.json_output:
+        payload = [a.to_dict() for a in assets]
+        print(json.dumps(payload, indent=2))
+    else:
+        print(format_scouted_table(assets))
+        print(f"\nFound {len(assets)} matching assets.")
     return 0
 
 
@@ -1736,6 +1786,7 @@ HANDLERS = {
     "doctor-render": _run_doctor_render,
     "brand": _run_brand,
     "auto-hook": _run_auto_hook,
+    "scout": _run_scout,
 }
 
 
