@@ -21,6 +21,7 @@ from ..ml_runner import MlRunner
 from ..paths import ensure_readable_source, ensure_writable_output, work_directory
 from ..probe import MediaInfo, probe
 from .audio_enhance import enhance_audio
+from .brand_kit import apply_brand_watermark
 from .progress_bar import add_progress_bar
 from .punch_zoom import punch_zoom
 from .silence_trim import trim_silence
@@ -52,6 +53,10 @@ def reelify(
     progress_bar_color: str = "yellow",
     silence_threshold_db: float = -32.0,
     min_silence_s: float = 0.4,
+    preset: str = "viral",
+    brand_logo: Path | str | None = None,
+    brand_position: str = "top-right",
+    brand_opacity: float = 0.85,
     force: bool = False,
 ) -> ReelifyResult:
     """Transform raw footage into a polished, high-retention 9:16 social short.
@@ -80,6 +85,11 @@ def reelify(
     source_info = probe(resolved_source, config)
     if not source_info.has_video:
         raise ValidationError(f"Source {resolved_source} has no video stream to reelify.")
+
+    if preset in ("clean", "minimal"):
+        enable_punch_zoom = False
+        enable_progress_bar = False
+        subtitles_style = "clean"
 
     work = work_directory(config, "reelify")
     stages: list[str] = []
@@ -172,6 +182,26 @@ def reelify(
                 stages.append("subtitles")
         except Exception:
             pass
+
+    # Stage 5b: Brand Kit Watermark
+    if brand_logo:
+        brand_path = Path(brand_logo)
+        if brand_path.exists():
+            brand_out = work / f"{resolved_source.stem}_s5b_branded.mp4"
+            try:
+                brand_res = apply_brand_watermark(
+                    current_clip,
+                    brand_path,
+                    brand_out,
+                    config,
+                    position=brand_position,
+                    opacity=brand_opacity,
+                    force=True,
+                )
+                current_clip = brand_res.output
+                stages.append("brand_watermark")
+            except Exception:
+                pass
 
     # Stage 6: Progress Bar (Final stage directly into resolved_output)
     if enable_progress_bar:

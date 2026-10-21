@@ -662,6 +662,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_io_arguments(reelify_cmd)
     reelify_cmd.add_argument(
+        "--preset",
+        choices=["viral", "clean", "minimal", "dynamic"],
+        default="viral",
+        help="Reelify preset mode (default: viral)",
+    )
+    reelify_cmd.add_argument(
+        "--brand-logo",
+        type=Path,
+        default=None,
+        help="Brand logo image to overlay in safe zone",
+    )
+    reelify_cmd.add_argument(
+        "--brand-pos",
+        choices=["top-left", "top-right", "bottom-left", "bottom-right", "center"],
+        default="top-right",
+        help="Brand logo position (default: top-right)",
+    )
+    reelify_cmd.add_argument(
+        "--brand-opacity",
+        type=float,
+        default=0.85,
+        help="Brand logo opacity (default: 0.85)",
+    )
+    reelify_cmd.add_argument(
         "--style", choices=STYLE_CHOICES, default="tiktok", help="Subtitle style preset"
     )
     reelify_cmd.add_argument(
@@ -1623,6 +1647,10 @@ def _run_reelify(args: argparse.Namespace, config: Config, runner: KinoRunner) -
         args.output,
         config,
         ml_runner,
+        preset=args.preset,
+        brand_logo=args.brand_logo,
+        brand_position=args.brand_pos,
+        brand_opacity=args.brand_opacity,
         subtitles_style=args.style,
         burn_subtitles=args.burn_subtitles,
         enable_punch_zoom=args.punch_zoom,

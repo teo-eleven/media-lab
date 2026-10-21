@@ -57,3 +57,40 @@ def test_reelify_pipeline_execution(raw_talking_clip: Path, config: Config, tmp_
     assert result.media.height == 1920
     assert "smart_reframe_9:16" in result.stages_executed
     assert "progress_bar" in result.stages_executed
+
+
+def test_reelify_with_brand_and_preset(
+    raw_talking_clip: Path, config: Config, tmp_path: Path
+) -> None:
+    ml_runner = MlRunner.from_config(config)
+    output = tmp_path / "branded_reel.mp4"
+
+    logo = tmp_path / "logo.png"
+    cmd = [
+        str(config.ffmpeg),
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=red:size=64x64",
+        "-frames:v",
+        "1",
+        str(logo),
+    ]
+    subprocess.run(cmd, check=True, capture_output=True)
+
+    result = reelify(
+        raw_talking_clip,
+        output,
+        config,
+        ml_runner,
+        preset="viral",
+        brand_logo=logo,
+        burn_subtitles=False,
+        enable_punch_zoom=False,
+        enable_progress_bar=False,
+        force=True,
+    )
+
+    assert result.output.is_file()
+    assert "brand_watermark" in result.stages_executed
