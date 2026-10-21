@@ -6,11 +6,61 @@ tailored for social media video (TikTok/Reels dynamic, clean minimalist, opaque 
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
 STYLE_CHOICES = ("tiktok", "clean", "box")
+
+EMOJI_KEYWORDS: dict[str, str] = {
+    "bani": "💰",
+    "money": "💰",
+    "cash": "💰",
+    "profit": "💰",
+    "foc": "🔥",
+    "fire": "🔥",
+    "hot": "🔥",
+    "flame": "🔥",
+    "idee": "💡",
+    "idea": "💡",
+    "gand": "💡",
+    "rapid": "⚡",
+    "fast": "⚡",
+    "viteza": "⚡",
+    "fulger": "⚡",
+    "stop": "🛑",
+    "iubire": "❤️",
+    "dragoste": "❤️",
+    "love": "❤️",
+    "succes": "🏆",
+    "win": "🏆",
+    "victorie": "🏆",
+    "timp": "⏱️",
+    "time": "⏱️",
+    "ceas": "⏱️",
+    "top": "🚀",
+    "viral": "🚀",
+    "secret": "🔒",
+    "atentie": "⚠️",
+}
+
+
+def apply_auto_emojis(text: str) -> str:
+    """Prepend relevant emojis to recognized keywords in text."""
+    if not text:
+        return text
+
+    words = text.split()
+    processed_words: list[str] = []
+    for w in words:
+        clean = re.sub(r"[^\w]", "", w).lower()
+        if clean in EMOJI_KEYWORDS:
+            emoji = EMOJI_KEYWORDS[clean]
+            processed_words.append(f"{emoji} {w}")
+        else:
+            processed_words.append(w)
+    return " ".join(processed_words)
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,8 +170,10 @@ def generate_ass(
     style: str = "tiktok",
     width: int = 1080,
     height: int = 1920,
+    kinetic: bool = False,
+    emojis: bool = False,
 ) -> str:
-    """Generate ASS subtitle file content with styling presets."""
+    """Generate ASS subtitle file content with styling presets, kinetic bouncing, and emojis."""
     style_def = _build_ass_styles(style, width, height)
 
     format_line = (
@@ -144,10 +196,15 @@ ScaledBorderAndShadow: yes
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     dialogues: list[str] = []
+    kinetic_prefix = r"{\t(0,100,\fscx115\fscy115)\t(100,200,\fscx100\fscy100)}" if kinetic else ""
 
     for seg in segments:
         if not seg.text:
             continue
+
+        raw_text = seg.text
+        if emojis:
+            raw_text = apply_auto_emojis(raw_text)
 
         # If tiktok style and word timestamps are available, chunk into 3-5 words
         if style == "tiktok" and seg.words:
@@ -157,12 +214,22 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 chunk = words[i : i + chunk_size]
                 start_str = format_timestamp_ass(chunk[0].start)
                 end_str = format_timestamp_ass(chunk[-1].end)
-                chunk_text = " ".join(w.word for w in chunk).upper()
-                dialogues.append(f"Dialogue: 0,{start_str},{end_str},Default,,0,0,0,,{chunk_text}")
+                chunk_str = " ".join(w.word for w in chunk)
+                if emojis:
+                    chunk_str = apply_auto_emojis(chunk_str)
+                chunk_text = chunk_str.upper()
+                dialogues.append(
+                    f"Dialogue: 0,{start_str},{end_str},Default,,0,0,0,,"
+                    f"{kinetic_prefix}{chunk_text}"
+                )
         else:
             start_str = format_timestamp_ass(seg.start)
             end_str = format_timestamp_ass(seg.end)
-            clean_text = seg.text.replace("\n", "\\N")
-            dialogues.append(f"Dialogue: 0,{start_str},{end_str},Default,,0,0,0,,{clean_text}")
+            clean_text = raw_text.replace("\n", "\\N")
+            if style == "tiktok":
+                clean_text = clean_text.upper()
+            dialogues.append(
+                f"Dialogue: 0,{start_str},{end_str},Default,,0,0,0,,{kinetic_prefix}{clean_text}"
+            )
 
     return header + "\n".join(dialogues) + "\n"

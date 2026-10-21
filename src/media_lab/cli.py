@@ -221,6 +221,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Burn subtitles into video (automatic if -o ends in .mp4/.mov)",
     )
     subs_cmd.add_argument(
+        "--kinetic",
+        action="store_true",
+        help="Apply kinetic bouncing pop-in animation to words",
+    )
+    subs_cmd.add_argument(
+        "--emojis",
+        action="store_true",
+        help="Automatically detect and insert relevant emojis at keywords",
+    )
+    subs_cmd.add_argument(
         "--save-subs",
         help="Also save subtitle file (.ass or .srt) when burning to video",
     )
@@ -903,6 +913,8 @@ def _run_subtitles(args: argparse.Namespace, config: Config, _runner: KinoRunner
         model=args.model,
         language=args.language,
         burn=args.burn,
+        kinetic=args.kinetic,
+        emojis=args.emojis,
         output_subs=args.save_subs,
         force=args.force,
     )

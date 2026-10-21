@@ -50,6 +50,8 @@ def generate_subtitles(
     model: str = "base",
     language: str | None = None,
     burn: bool = False,
+    kinetic: bool = False,
+    emojis: bool = False,
     output_subs: Path | str | None = None,
     force: bool = False,
 ) -> SubtitlesResult:
@@ -64,6 +66,8 @@ def generate_subtitles(
         model: Pretrained Whisper model (default: 'base').
         language: Language code (e.g. 'en', 'ro', 'es').
         burn: Burn subtitles into video. Automatically set to True if output is a video extension.
+        kinetic: Apply pop-in kinetic bounce animation to words.
+        emojis: Automatically insert emojis for matching keywords.
         output_subs: Optional path to save subtitle file when burning onto video.
         force: Allow overwriting existing output.
     """
@@ -111,7 +115,14 @@ def generate_subtitles(
     width = source_info.width or 1080
     height = source_info.height or 1920
 
-    ass_content = generate_ass(segments, style=style, width=width, height=height)
+    ass_content = generate_ass(
+        segments,
+        style=style,
+        width=width,
+        height=height,
+        kinetic=kinetic,
+        emojis=emojis,
+    )
     srt_content = generate_srt(segments)
 
     created_sub_path: Path

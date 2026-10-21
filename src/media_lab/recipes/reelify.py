@@ -162,6 +162,8 @@ def reelify(
                 style=subtitles_style,
                 model=whisper_model,
                 burn=True,
+                kinetic=True,
+                emojis=True,
                 force=True,
             )
             if sub_res.video_file and sub_res.video_file.exists():
