@@ -53,6 +53,8 @@ probed and checked against what was asked for.
 | `media-lab brand`        | Corporate brand kit: watermark logo overlay with opacity & safe zones  |
 | `media-lab auto-hook`    | Acoustic energy spike analyzer & automatic viral hook slicing          |
 | `media-lab scout`        | Local media asset cataloger & fast search (B-roll, SFX, plates)        |
+| `media-lab export-timeline`| Export timeline NLE (Apple FCPXML v1.10 / CMX 3600 EDL) for DaVinci / Premiere |
+| `media-lab thumbnail-gen`  | High CTR viral thumbnail generator (neural cutout, neon glow, pill badge)|
 | `media-lab prompt`       | Autonomous agent: prompt-to-edit in natural language (RO & EN)         |
 | `media-lab mcp`          | Model Context Protocol (MCP) server over stdio for AI assistant pairing|
 | `media-lab pipeline`     | Run the whole edit in one pass                                         |
@@ -181,6 +183,13 @@ uv run media-lab doctor-render out/master.mp4 --auto-fix -o out/master_fixed.mp4
 # Local asset scout (B-roll, foley sound effects, background plates)
 uv run media-lab scout --type sfx --category whoosh
 uv run media-lab scout --type video --vertical
+
+# 7. Hollywood NLE Timelines & Viral Thumbnails (Phase 7)
+# Export timeline for DaVinci Resolve (FCPXML) or Premiere Pro (EDL)
+uv run media-lab export-timeline in/clip.mp4 -o out/timeline.fcpxml --format fcpxml --fps 25.0
+uv run media-lab export-timeline in/clip.mp4 -o out/timeline.edl --format edl
+# Generate high-retention viral YouTube/TikTok thumbnail
+uv run media-lab thumbnail-gen in/clip.mp4 -o out/thumbnail.jpg --title "VIRAL DROP" --aspect 16:9 --stroke yellow
 ```
 
 The pipeline runs: cutout, backdrop, look, restore the voice the compositor

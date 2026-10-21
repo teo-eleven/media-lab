@@ -326,8 +326,9 @@
         <span class="chip" onclick="applySuggestion('Urmărește mișcarea persoanei cu camera lin și stabilizează clipul')">🎥 Cameră Dinamică (Follow)</span>
         <span class="chip" onclick="applySuggestion('Fă un short vertical 9:16 cu subtitrări galbene TikTok, curăță vocea și taie pauzele')">📱 Short 9:16 + Subtitrări</span>
         <span class="chip" onclick="applySuggestion('Adaugă o bară animată de progres galbenă la bază și zoom dinamic la 4 secunde')">⚡ Progres + Zoom</span>
+        <span class="chip" onclick="applySuggestion('Generează un thumbnail viral 16:9 cu glow galben și titlu')">🖼️ Viral Thumbnail</span>
+        <span class="chip" onclick="applySuggestion('Exportă timeline-ul în format FCPXML pentru DaVinci Resolve')">🎬 Export DaVinci Timeline</span>
         <span class="chip" onclick="applySuggestion('Curăță vocea cu profil podcast, aplică de-esser și normalizează sunetul')">🎙️ Mastering Voce</span>
-        <span class="chip" onclick="applySuggestion('Retușează tenul discret, adaugă bokeh pe fundal și un badge cu titlul sus')">🎨 Retuș Foto</span>
       </div>
 
       <div class="chat-input-bar">
@@ -352,15 +353,21 @@
         <div class="meta-row"><span class="meta-label">Folder</span><span class="meta-value" id="metaFolder">-</span></div>
       </div>
 
-      <!-- Quick Production Suite (Faza 6) -->
+      <!-- Pro Studio Tools (Faza 6 & 7) -->
       <div style="padding: 14px 16px; border-top: 1px solid var(--border); background: var(--bg-card); margin: 12px; border-radius: 8px;">
         <div style="font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 10px; font-weight: 700; display: flex; align-items: center; justify-content: space-between;">
-          <span>⚡ Faza 6 Quick Tools</span>
+          <span>⚡ Pro Studio Tools</span>
           <span style="font-size: 0.7rem; color: var(--accent);">Local Engine</span>
         </div>
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <button class="btn btn-primary" style="justify-content: center; font-size: 0.82rem; padding: 7px 10px;" onclick="runQuickReelify()" title="Transformă automat clipul într-un Reel vertical 9:16 cu subtitrări animate și bare de retenție">
             ⚡ One-Click Reelify
+          </button>
+          <button class="btn secondary" style="justify-content: center; font-size: 0.82rem; padding: 7px 10px;" onclick="runQuickThumbnail()" title="Generează un thumbnail viral cu decupare subiect, contur neon glow și titlu badge">
+            🖼️ Viral Thumbnail Gen
+          </button>
+          <button class="btn secondary" style="justify-content: center; font-size: 0.82rem; padding: 7px 10px;" onclick="runQuickTimelineExport()" title="Exportă timeline NLE pentru DaVinci Resolve sau Premiere Pro (FCPXML / EDL)">
+            🎬 Export DaVinci Timeline
           </button>
           <button class="btn secondary" style="justify-content: center; font-size: 0.82rem; padding: 7px 10px;" onclick="runQuickOmniExport()" title="Exportă pe 4 formate simultan (9:16, 1:1, 16:9, 4:5)">
             🌐 Omni Campaign Export
@@ -875,6 +882,105 @@
           <div class="plan-card" style="margin-top: 10px;">${itemsHtml}</div>
           <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 8px;">Găsite categorii: plate_video, plate_still, broll, sfx, audio.</div>
         `;
+      } catch (err) {
+        statusMsg.innerHTML = `<span style="color: var(--danger);">Eroare rețea: ${escapeHtml(err.message)}</span>`;
+      }
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+    }
+
+    async function runQuickThumbnail() {
+      if (!currentSelectedFile) {
+        alert("Te rog selectează mai întâi un clip video sau o imagine din stânga!");
+        return;
+      }
+      const title = prompt("Titlu text pentru badge-ul Thumbnail:", "VIRAL DROP") || "VIRAL DROP";
+      const messagesArea = document.getElementById('messagesArea');
+      const statusMsg = document.createElement('div');
+      statusMsg.className = 'message agent';
+      statusMsg.innerHTML = `<em>🖼️ Se generează Viral Thumbnail pentru <code>${escapeHtml(currentSelectedFile.name)}</code> cu titlul <strong>"${escapeHtml(title)}"</strong>... (sharpness scan, neural cutout, neon glow outline)</em>`;
+      messagesArea.appendChild(statusMsg);
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+
+      try {
+        const res = await fetch('/api/thumbnail', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            source: `${currentSelectedFile.folder}/${currentSelectedFile.name}`,
+            title: title,
+            style: 'viral',
+            stroke: 'yellow',
+            aspect: '16:9'
+          })
+        });
+        const data = await res.json();
+        if (data.error) {
+          statusMsg.innerHTML = `<span style="color: var(--danger);">❌ Eroare Thumbnail: ${escapeHtml(data.error)}</span>`;
+          return;
+        }
+
+        statusMsg.innerHTML = `
+          <div>🎉 <strong>Viral Thumbnail Generat cu Succes!</strong></div>
+          <div style="margin: 10px 0;">
+            <img src="${data.url}" style="max-width: 100%; border-radius: 8px; border: 1px solid var(--border);" alt="Viral Thumbnail">
+          </div>
+          <div class="plan-card" style="margin-top: 8px;">
+            <div class="plan-step"><span class="step-badge">✓</span><span>Rezoluție: ${data.width}x${data.height} (16:9 High CTR)</span></div>
+            <div class="plan-step"><span class="step-badge">✓</span><span>Badge Titlu: "${escapeHtml(data.title)}"</span></div>
+            <div class="plan-step"><span class="step-badge">✓</span><span>Efecte: Neural Subject Glow + High Contrast Palette</span></div>
+          </div>
+          <div style="margin-top: 8px; font-weight: 600;">Fișier generat: <code style="color: var(--success);">${escapeHtml(data.output)}</code></div>
+        `;
+        await loadFiles();
+        selectFile('out', { name: data.output, type: 'image', size_human: 'Thumb' }, null);
+      } catch (err) {
+        statusMsg.innerHTML = `<span style="color: var(--danger);">Eroare rețea: ${escapeHtml(err.message)}</span>`;
+      }
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+    }
+
+    async function runQuickTimelineExport() {
+      if (!currentSelectedFile) {
+        alert("Te rog selectează mai întâi un clip video din stânga!");
+        return;
+      }
+      const useFcpxml = confirm("Apasă OK pentru Apple FCPXML (DaVinci Resolve / Final Cut Pro) sau Cancel pentru CMX 3600 EDL (Premiere Pro / AVID)?");
+      const fmt = useFcpxml ? "fcpxml" : "edl";
+      const messagesArea = document.getElementById('messagesArea');
+      const statusMsg = document.createElement('div');
+      statusMsg.className = 'message agent';
+      statusMsg.innerHTML = `<em>🎬 Export timeline NLE (${fmt.toUpperCase()}) în curs pentru <code>${escapeHtml(currentSelectedFile.name)}</code>... Se extrag secvențele de cadru și timecode-urile SMPTE...</em>`;
+      messagesArea.appendChild(statusMsg);
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+
+      try {
+        const res = await fetch('/api/timeline', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            source: `${currentSelectedFile.folder}/${currentSelectedFile.name}`,
+            format: fmt,
+            fps: 25.0
+          })
+        });
+        const data = await res.json();
+        if (data.error) {
+          statusMsg.innerHTML = `<span style="color: var(--danger);">❌ Eroare Timeline Export: ${escapeHtml(data.error)}</span>`;
+          return;
+        }
+
+        statusMsg.innerHTML = `
+          <div>🎉 <strong>Export Timeline Hollywood Finalizat!</strong></div>
+          <div class="plan-card" style="margin-top: 10px;">
+            <div class="plan-step"><span class="step-badge">Format</span><span>${escapeHtml(data.format.toUpperCase())} NLE Project</span></div>
+            <div class="plan-step"><span class="step-badge">Clips</span><span>${data.clip_count} secvențe sincronizate</span></div>
+            <div class="plan-step"><span class="step-badge">Durată</span><span>${data.total_duration_s.toFixed(2)} secunde (SMPTE Non-Drop)</span></div>
+          </div>
+          <div style="margin-top: 10px; font-weight: 600;">
+            Fișier salvat: <a href="${data.url}" download style="color: var(--accent); text-decoration: underline;">${escapeHtml(data.output)}</a> (deschide direct în DaVinci Resolve / Premiere Pro)
+          </div>
+        `;
+        await loadFiles();
       } catch (err) {
         statusMsg.innerHTML = `<span style="color: var(--danger);">Eroare rețea: ${escapeHtml(err.message)}</span>`;
       }

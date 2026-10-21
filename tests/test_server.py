@@ -267,6 +267,95 @@ def test_studio_server_endpoints(config: Config) -> None:
             assert "output" in res_polite
             assert (config.out_dir / res_polite["output"]).is_file()
 
+        # 16. Test POST /api/thumbnail
+        post_thumb = json.dumps(
+            {
+                "source": f"in/{src_file.name}",
+                "title": "TEST BADGE",
+                "stroke": "cyan",
+                "aspect": "16:9",
+            }
+        ).encode("utf-8")
+        req_thumb = urllib.request.Request(
+            f"{base_url}/api/thumbnail",
+            data=post_thumb,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req_thumb) as resp:
+            assert resp.status == 200
+            res_thumb = json.loads(resp.read().decode("utf-8"))
+            assert res_thumb["status"] == "ok"
+            assert "output" in res_thumb
+            assert (config.out_dir / res_thumb["output"]).is_file()
+            assert res_thumb["width"] == 1280
+            assert res_thumb["height"] == 720
+            assert res_thumb["title"] == "TEST BADGE"
+
+        # 17. Test POST /api/timeline (FCPXML and EDL)
+        post_fcpxml = json.dumps(
+            {
+                "source": f"in/{src_file.name}",
+                "format": "fcpxml",
+                "fps": 25.0,
+            }
+        ).encode("utf-8")
+        req_fcpxml = urllib.request.Request(
+            f"{base_url}/api/timeline",
+            data=post_fcpxml,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req_fcpxml) as resp:
+            assert resp.status == 200
+            res_fcpxml = json.loads(resp.read().decode("utf-8"))
+            assert res_fcpxml["status"] == "ok"
+            assert res_fcpxml["format"] == "fcpxml"
+            assert (config.out_dir / res_fcpxml["output"]).is_file()
+            assert res_fcpxml["clip_count"] >= 1
+
+        post_edl = json.dumps(
+            {
+                "source": f"in/{src_file.name}",
+                "format": "edl",
+                "fps": 25.0,
+            }
+        ).encode("utf-8")
+        req_edl = urllib.request.Request(
+            f"{base_url}/api/timeline",
+            data=post_edl,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req_edl) as resp:
+            assert resp.status == 200
+            res_edl = json.loads(resp.read().decode("utf-8"))
+            assert res_edl["status"] == "ok"
+            assert res_edl["format"] == "edl"
+            assert (config.out_dir / res_edl["output"]).is_file()
+
+        # 18. Error handling on /api/thumbnail (missing source and 404)
+        post_err = json.dumps({}).encode("utf-8")
+        req_err = urllib.request.Request(
+            f"{base_url}/api/thumbnail",
+            data=post_err,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            urllib.request.urlopen(req_err)
+            pytest.fail("Should have failed with 400")
+        except urllib.error.HTTPError as err:
+            assert err.code == 400
+
+        post_404 = json.dumps({"source": "non_existent.mp4"}).encode("utf-8")
+        req_404 = urllib.request.Request(
+            f"{base_url}/api/thumbnail",
+            data=post_404,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            urllib.request.urlopen(req_404)
+            pytest.fail("Should have failed with 404")
+        except urllib.error.HTTPError as err:
+            assert err.code == 404
+
     finally:
         server.shutdown()
         server.server_close()

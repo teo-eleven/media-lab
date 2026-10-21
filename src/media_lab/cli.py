@@ -55,6 +55,8 @@ from .recipes.stabilize import stabilize_video
 from .recipes.stems import AUDIO_FORMAT_CHOICES, TWO_STEMS_CHOICES, separate_stems
 from .recipes.subject_ground import ground_subject
 from .recipes.subtitles import generate_subtitles
+from .recipes.thumbnail_generator import STROKE_PALETTE, generate_viral_thumbnail
+from .recipes.timeline_export import export_timeline
 from .recipes.to_short import to_short
 from .recipes.typography import VALID_POSITIONS, TypographyStyle, apply_typography
 from .recipes.upscale import upscale
@@ -834,6 +836,67 @@ def build_parser() -> argparse.ArgumentParser:
     scout_cmd.add_argument(
         "--json", dest="json_output", action="store_true", help="Output JSON array of metadata"
     )
+
+    timeline_cmd = subcommands.add_parser(
+        "export-timeline",
+        help="Export timeline to DaVinci Resolve / Premiere Pro (FCPXML v1.10 or CMX 3600 EDL)",
+    )
+    _add_io_arguments(timeline_cmd)
+    timeline_cmd.add_argument(
+        "--format",
+        choices=["fcpxml", "edl"],
+        default="fcpxml",
+        help="Timeline format (default: fcpxml)",
+    )
+    timeline_cmd.add_argument(
+        "--fps",
+        type=float,
+        default=25.0,
+        help="Timeline sequence frame rate (default: 25.0)",
+    )
+    timeline_cmd.add_argument(
+        "--project-name",
+        default=None,
+        help="Custom project/sequence name",
+    )
+
+    thumb_cmd = subcommands.add_parser(
+        "thumbnail-gen",
+        help="Generate high-CTR social cover with subject glow & title badge",
+    )
+    _add_io_arguments(thumb_cmd)
+    thumb_cmd.add_argument("--title", help="High-impact typography title badge text")
+    thumb_cmd.add_argument(
+        "--style",
+        choices=["viral", "minimal", "cinematic"],
+        default="viral",
+        help="Thumbnail visual style",
+    )
+    thumb_cmd.add_argument(
+        "--stroke",
+        choices=sorted(list(STROKE_PALETTE.keys())) + ["none"],
+        default="yellow",
+        help="Neon outline stroke color",
+    )
+    thumb_cmd.add_argument(
+        "--stroke-width", type=int, default=8, help="Stroke outline width in pixels"
+    )
+    thumb_cmd.add_argument(
+        "--no-glow", dest="glow", action="store_false", help="Disable outer glow halo"
+    )
+    thumb_cmd.add_argument(
+        "--aspect",
+        choices=["16:9", "9:16"],
+        default="16:9",
+        help="Target thumbnail aspect ratio",
+    )
+    thumb_cmd.add_argument(
+        "--timestamp",
+        type=float,
+        default=None,
+        help="Timestamp in seconds to extract frame from",
+    )
+    thumb_cmd.add_argument("--bg", default=None, help="Custom background image path")
 
     return parser
 
@@ -1769,6 +1832,44 @@ def _run_scout(args: argparse.Namespace, config: Config, _runner: KinoRunner) ->
     return 0
 
 
+def _run_export_timeline(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    result = export_timeline(
+        args.input,
+        args.output,
+        config,
+        format=args.format,
+        fps=args.fps,
+        project_name=args.project_name,
+        force=args.force,
+    )
+    print(
+        f"timeline export complete -> {result.output} "
+        f"({result.format.upper()}, {result.clip_count} clips, {result.total_duration_s:.2f}s)"
+    )
+    return 0
+
+
+def _run_thumbnail_gen(args: argparse.Namespace, config: Config, _runner: KinoRunner) -> int:
+    ml_runner = MlRunner.from_config(config)
+    result = generate_viral_thumbnail(
+        args.input,
+        args.output,
+        config,
+        ml_runner,
+        title=args.title,
+        style=args.style,
+        stroke_color=args.stroke,
+        stroke_width=args.stroke_width,
+        glow=args.glow,
+        target_aspect=args.aspect,
+        timestamp_s=args.timestamp,
+        bg_image=args.bg,
+        force=args.force,
+    )
+    print(f"viral thumbnail generated -> {result.output} ({result.width}x{result.height})")
+    return 0
+
+
 HANDLERS = {
     "stabilize": _run_stabilize,
     "camera-motion": _run_camera_motion,
@@ -1815,6 +1916,8 @@ HANDLERS = {
     "brand": _run_brand,
     "auto-hook": _run_auto_hook,
     "scout": _run_scout,
+    "export-timeline": _run_export_timeline,
+    "thumbnail-gen": _run_thumbnail_gen,
 }
 
 

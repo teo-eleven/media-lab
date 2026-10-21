@@ -30,6 +30,8 @@ from .recipes.footage_scout import scout_library
 from .recipes.omni_export import omni_export
 from .recipes.reelify import reelify
 from .recipes.render_doctor import auto_fix_render, diagnose_render
+from .recipes.thumbnail_generator import generate_viral_thumbnail
+from .recipes.timeline_export import export_timeline
 
 STATIC_DIR: Path = Path(__file__).parent / "static"
 
@@ -113,6 +115,14 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
 
         if url.path == "/api/doctor":
             self._handle_api_doctor()
+            return
+
+        if url.path == "/api/thumbnail":
+            self._handle_api_thumbnail()
+            return
+
+        if url.path == "/api/timeline":
+            self._handle_api_timeline()
             return
 
         self.send_error(HTTPStatus.NOT_FOUND, "Endpoint not found")
@@ -667,6 +677,101 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
             )
         except Exception as err:
             self._send_json_response({"error": f"Scout failed: {err}"}, status=500)
+
+    def _handle_api_thumbnail(self) -> None:
+        content_length = int(self.headers.get("Content-Length", 0))
+        post_data = self.rfile.read(content_length)
+        try:
+            payload = json.loads(post_data.decode("utf-8"))
+        except Exception as err:
+            self._send_json_response({"error": f"Invalid JSON payload: {err}"}, status=400)
+            return
+
+        src_name = payload.get("source")
+        if not src_name:
+            self._send_json_response({"error": "Missing source parameter"}, status=400)
+            return
+
+        src_path = self._resolve_media_path(src_name)
+        if not src_path or not src_path.is_file():
+            self._send_json_response({"error": f"Source file not found: {src_name}"}, status=404)
+            return
+
+        out_name = payload.get("output") or f"thumb_{src_path.stem}.jpg"
+        out_path = self.config.out_dir / out_name
+        title = payload.get("title") or "NEW RELEASE"
+
+        try:
+            result = generate_viral_thumbnail(
+                src_path,
+                out_path,
+                self.config,
+                self.ml_runner,
+                title=title,
+                style=payload.get("style", "viral"),
+                stroke_color=payload.get("stroke", "yellow"),
+                target_aspect=payload.get("aspect", "16:9"),
+                force=True,
+            )
+            self._send_json_response(
+                {
+                    "status": "ok",
+                    "output": result.output.name,
+                    "url": f"/media/out/{result.output.name}",
+                    "width": result.width,
+                    "height": result.height,
+                    "title": result.title,
+                }
+            )
+        except Exception as exc:
+            self._send_json_response({"error": f"Thumbnail generation failed: {exc}"}, status=500)
+
+    def _handle_api_timeline(self) -> None:
+        content_length = int(self.headers.get("Content-Length", 0))
+        post_data = self.rfile.read(content_length)
+        try:
+            payload = json.loads(post_data.decode("utf-8"))
+        except Exception as err:
+            self._send_json_response({"error": f"Invalid JSON payload: {err}"}, status=400)
+            return
+
+        src_name = payload.get("source")
+        if not src_name:
+            self._send_json_response({"error": "Missing source parameter"}, status=400)
+            return
+
+        src_path = self._resolve_media_path(src_name)
+        if not src_path or not src_path.is_file():
+            self._send_json_response({"error": f"Source file not found: {src_name}"}, status=404)
+            return
+
+        fmt = payload.get("format", "fcpxml")
+        ext = ".fcpxml" if fmt == "fcpxml" else ".edl"
+        out_name = payload.get("output") or f"timeline_{src_path.stem}{ext}"
+        out_path = self.config.out_dir / out_name
+
+        try:
+            result = export_timeline(
+                src_path,
+                out_path,
+                self.config,
+                format=fmt,
+                fps=float(payload.get("fps", 25.0)),
+                project_name=payload.get("project_name"),
+                force=True,
+            )
+            self._send_json_response(
+                {
+                    "status": "ok",
+                    "output": result.output.name,
+                    "format": result.format,
+                    "clip_count": result.clip_count,
+                    "total_duration_s": result.total_duration_s,
+                    "url": f"/media/out/{result.output.name}",
+                }
+            )
+        except Exception as exc:
+            self._send_json_response({"error": f"Timeline export failed: {exc}"}, status=500)
 
 
 def create_server(
