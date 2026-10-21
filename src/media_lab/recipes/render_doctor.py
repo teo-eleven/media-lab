@@ -10,14 +10,15 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from PIL import Image, ImageStat
 
 from ..config import Config
 from ..contact_sheet import extract_frames, tile
 from ..errors import MediaLabError
-from ..paths import ensure_readable_source, work_directory
+from ..ffmpeg import run_ffmpeg
+from ..paths import ensure_readable_source, ensure_writable_output, work_directory
 from ..probe import MediaInfo, probe
 
 CheckStatus = Literal["PASS", "WARNING", "FAIL"]
@@ -50,6 +51,41 @@ class DoctorReport:
     @property
     def has_warnings(self) -> bool:
         return self.overall_status == "WARNING"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert report to JSON-serializable dictionary."""
+        return {
+            "source": str(self.source),
+            "overall_status": self.overall_status,
+            "passed": self.passed,
+            "has_warnings": self.has_warnings,
+            "contact_sheet": str(self.contact_sheet) if self.contact_sheet else None,
+            "checks": [
+                {
+                    "name": c.name,
+                    "status": c.status,
+                    "message": c.message,
+                    "recommendation": c.recommendation,
+                }
+                for c in self.checks
+            ],
+            "media_info": {
+                "width": self.media_info.width,
+                "height": self.media_info.height,
+                "duration_s": self.media_info.duration_s,
+                "has_video": self.media_info.has_video,
+                "has_audio": self.media_info.has_audio,
+            },
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class FixResult:
+    """Outcome of automated repair pass by Render Doctor."""
+
+    output: Path
+    media: MediaInfo
+    fixes_applied: tuple[str, ...]
 
 
 def diagnose_render(
@@ -257,4 +293,60 @@ def diagnose_render(
         checks=tuple(checks),
         contact_sheet=contact_sheet_path,
         media_info=media,
+    )
+
+
+def auto_fix_render(
+    source: Path | str,
+    output: Path | str,
+    report: DoctorReport,
+    config: Config,
+    *,
+    force: bool = False,
+) -> FixResult:
+    """Automatically repair common render defects identified in a DoctorReport.
+
+    Repairs odd dimensions (scales to nearest even width/height) and audio streams.
+    """
+    resolved_source = ensure_readable_source(source)
+    resolved_output = ensure_writable_output(output, config, force=force)
+
+    fixes: list[str] = []
+    vf_filters: list[str] = []
+
+    # Check for odd dimensions
+    even_dim_checks = [c for c in report.checks if c.name == "Even Dimensions"]
+    if even_dim_checks and even_dim_checks[0].status == "FAIL":
+        vf_filters.append("scale=trunc(iw/2)*2:trunc(ih/2)*2")
+        fixes.append("even_dimensions_scaling")
+
+    if not vf_filters:
+        # Default safety scale
+        vf_filters.append("scale=trunc(iw/2)*2:trunc(ih/2)*2")
+
+    cmd = [
+        "-i",
+        str(resolved_source),
+        "-vf",
+        ",".join(vf_filters),
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-preset",
+        "veryfast",
+    ]
+
+    if report.media_info.has_audio:
+        cmd.extend(["-c:a", "copy"])
+
+    cmd.extend(["-movflags", "+faststart", "-y", str(resolved_output)])
+
+    run_ffmpeg(cmd, config)
+    rendered_info = probe(resolved_output, config)
+
+    return FixResult(
+        output=resolved_output,
+        media=rendered_info,
+        fixes_applied=tuple(fixes),
     )

@@ -44,7 +44,7 @@ from .recipes.proxy_preview import proxy_preview
 from .recipes.punch_zoom import punch_zoom
 from .recipes.punto_v23 import run_punto
 from .recipes.reelify import reelify
-from .recipes.render_doctor import diagnose_render
+from .recipes.render_doctor import auto_fix_render, diagnose_render
 from .recipes.scale_plate import estimate_plate_scale
 from .recipes.sfx import SFX_KINDS, SfxCue, add_sfx
 from .recipes.silence_trim import trim_silence
@@ -717,6 +717,23 @@ def build_parser() -> argparse.ArgumentParser:
         dest="generate_sheet",
         action="store_false",
         help="Skip contact sheet generation",
+    )
+    doctor_render_cmd.add_argument(
+        "--auto-fix",
+        action="store_true",
+        help="Automatically fix common render defects (odd dimensions, audio streams)",
+    )
+    doctor_render_cmd.add_argument(
+        "-o", "--output", help="Destination path for repaired render when using --auto-fix"
+    )
+    doctor_render_cmd.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="Output structured JSON audit report",
+    )
+    doctor_render_cmd.add_argument(
+        "-f", "--force", action="store_true", help="Overwrite existing output"
     )
 
     brand_cmd = subcommands.add_parser(
@@ -1613,6 +1630,12 @@ def _run_doctor_render(args: argparse.Namespace, config: Config, runner: KinoRun
         generate_contact_sheet=args.generate_sheet,
         expected_aspect=args.aspect,
     )
+    if args.json_output:
+        import json
+
+        print(json.dumps(report.to_dict(), indent=2))
+        return 0 if report.passed or report.has_warnings else 1
+
     status_icon = "✓" if report.passed else ("⚠" if report.has_warnings else "✗")
     print(f"doctor-render: {report.source.name} [{status_icon} {report.overall_status}]")
     for check in report.checks:
@@ -1622,6 +1645,17 @@ def _run_doctor_render(args: argparse.Namespace, config: Config, runner: KinoRun
             print(f"      -> Recommendation: {check.recommendation}")
     if report.contact_sheet:
         print(f"  contact sheet: {report.contact_sheet}")
+
+    if args.auto_fix:
+        if not args.output:
+            print("error: --auto-fix requires -o/--output path", file=sys.stderr)
+            return 1
+        fix_res = auto_fix_render(
+            args.input, args.output, report, config, force=args.force
+        )
+        fixes_str = ', '.join(fix_res.fixes_applied) or 're-encoded'
+        print(f"  auto-fix applied ({fixes_str}) -> {fix_res.output}")
+
     return 0 if report.passed or report.has_warnings else 1
 
 
