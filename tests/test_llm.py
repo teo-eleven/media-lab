@@ -158,7 +158,7 @@ def test_cognitive_brain_silent_media_handling() -> None:
         has_audio=False,
         has_alpha=False,
         codec_video="h264",
-        codec_audio=None,
+        codec_audio="",
         pixel_format="yuv420p",
     )
 
